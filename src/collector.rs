@@ -1,3 +1,7 @@
+//! Collector is a trait that can be implemented across Collections and other types that implement
+//! Extend trait. For instance here it has been implemented for Vector, HashMap and so on. This allows
+//! the end result to collected in the desired form as per the annotation.
+
 use std::hash::Hash;
 use std::collections::HashMap;
 

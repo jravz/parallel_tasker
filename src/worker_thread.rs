@@ -1,3 +1,8 @@
+//! WorkerThreads enables the launching of thread pool that manages the running of closures
+//! based on inputs from the Iterator. This follows a pull phiolosophy and thus threads run till
+//! there are Items to pull from the Iterator. Whenever a thread becomes free it pulls a new Item
+//! and runs the closure function on the same
+
 use std::{error::Error, pin::Pin, sync::{Arc, Mutex}};
 
 use crate::{collector::Collector, errors::TaskError, parallel_task::Tasks};

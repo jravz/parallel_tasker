@@ -1,6 +1,5 @@
-/// ParallelTaskIter is an experiment to create a simple module to help manage CPU intensive jobs across threads. This proposes
-/// that a work stealing algorithm is not always necessary and a simple pull (.next) based approach can be equally effective in specific use case.
-
+//! ParallelTaskIter is an experiment to create a simple module to help manage CPU intensive jobs across threads. This proposes
+//! that a work stealing algorithm is not always necessary and a simple pull (.next) based approach can be equally effective in specific use case.
 const DEFAULT_THREADS_NUM:usize = 1;
 const CPU_2_THREAD_RATIO:usize = 2;
 
@@ -26,7 +25,8 @@ F: Fn(V) -> T + Send,
 V: Send,
 T:Send {}
 
-/// Tasks is a structure that captures the information necessary to run the values within the Iterator in parallel
+/// Tasks is a structure type that captures the information necessary to run the values within the Iterator in parallel
+/// Its the result of parallel_task that can be run on any Iterator implementing type.
 pub struct Tasks<I,V,F,T>
 where I: Iterator<Item = V> + Send, 
 F: Fn(V) -> T + Send,

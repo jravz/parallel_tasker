@@ -31,3 +31,9 @@ fn comparison_with_rayon() {
 
     assert_eq!(r1.len(),r2.len())
 }
+
+#[test]
+fn length_test() {      
+    let res = (0..100_000).parallel_task(|val|val).collect::<Vec<i32>>();
+    assert_eq!(res.len(),100_000)
+}

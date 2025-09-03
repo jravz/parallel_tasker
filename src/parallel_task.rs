@@ -1,5 +1,3 @@
-//! ParallelTaskIter is an experiment to create a simple module to help manage CPU intensive jobs across threads. This proposes
-//! that a work stealing algorithm is not always necessary and a simple pull (.next) based approach can be equally effective in specific use case.
 const DEFAULT_THREADS_NUM:usize = 1;
 const CPU_2_THREAD_RATIO:usize = 2;
 
@@ -8,6 +6,15 @@ use crate::worker_thread::WorkerThreads;
 
 use super::collector::*;
 
+/// ParallelTaskIter is an experiment to create a simple module to help manage CPU intensive jobs across threads. This proposes
+/// that a work stealing algorithm is not always necessary and a simple pull (.next) based approach can be equally effective in specific use case.
+/// ```
+/// use parallel_task::prelude::*;
+/// 
+/// let res = (0..100_000).parallel_task(|val|val).collect::<Vec<i32>>();
+/// assert_eq!(res.len(),100_000)
+/// ```
+/// 
 pub trait ParallelTaskIter<V,F,T> 
 where Self: Iterator<Item = V> + Send + Sized, 
 F: Fn(V) -> T + Send,

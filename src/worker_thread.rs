@@ -20,7 +20,7 @@ impl WorkerThreads
     C: Collector<T> {
         let mut vec_handles = Vec::new();
         let arc_mut_task = Arc::new(Mutex::new(task));            
-
+        
         for _ in 0..self.nthreads {
             let builder = std::thread::Builder::new();
             let arc_mut_task_clone = arc_mut_task.clone();   

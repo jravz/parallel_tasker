@@ -3,7 +3,7 @@
 //! the end result to collected in the desired form as per the annotation.
 
 use std::hash::Hash;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 pub trait Collector<T>:Extend<T> {
     fn initialize() -> Self;
@@ -24,3 +24,10 @@ where K: Eq + Hash + Send,
         hsh
     }
 }
+
+impl<T> Collector<T> for VecDeque<T> {
+    fn initialize() -> Self {
+        VecDeque::new()
+    }
+}
+

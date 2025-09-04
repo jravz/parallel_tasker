@@ -21,8 +21,8 @@ F: Fn(V) -> T + Send,
 V: Send,
 T:Send
 {
-    fn parallel_task(self,f:F) -> Tasks<Self,V,F,T> {
-        Tasks::new(self,f)
+    fn parallel_task(self,f:F) -> ParallelTask<Self,V,F,T> {
+        ParallelTask::new(self,f)
     }
 }
 
@@ -34,7 +34,7 @@ T:Send {}
 
 /// Tasks is a structure type that captures the information necessary to run the values within the Iterator in parallel
 /// Its the result of parallel_task that can be run on any Iterator implementing type.
-pub struct Tasks<I,V,F,T>
+pub struct ParallelTask<I,V,F,T>
 where I: Iterator<Item = V> + Send, 
 F: Fn(V) -> T + Send,
 V: Send,
@@ -46,7 +46,7 @@ T:Send
 }
 
 #[allow(dead_code)]
-impl<I,V,F,T> Tasks<I,V,F,T> 
+impl<I,V,F,T> ParallelTask<I,V,F,T> 
 where I: Iterator<Item = V> + Send, 
 F: Fn(V) -> T + Send,
 V: Send,

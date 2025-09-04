@@ -5,14 +5,14 @@
 
 use std::{error::Error, pin::Pin, sync::{Arc, Mutex}};
 
-use crate::{collector::Collector, errors::TaskError, parallel_task::Tasks};
+use crate::{collector::Collector, errors::TaskError, parallel_task::ParallelTask};
 
 pub struct WorkerThreads {pub nthreads:usize }
 
 #[allow(dead_code)]
 impl WorkerThreads
 {
-    pub fn collect<I,F,T,V,C>(self, task:Tasks<I,V,F,T>) -> C
+    pub fn collect<I,F,T,V,C>(self, task:ParallelTask<I,V,F,T>) -> C
     where I: Iterator<Item = V> + Send, 
     F: Fn(V) -> T + Send,
     T: Send,
@@ -51,7 +51,7 @@ impl WorkerThreads
         output
     }    
 
-    pub fn try_collect<I,F,T,V,C>(self, task:Arc<Mutex<Tasks<I,V,F,T>>>) -> Result<C,Box<dyn Error>>
+    pub fn try_collect<I,F,T,V,C>(self, task:Arc<Mutex<ParallelTask<I,V,F,T>>>) -> Result<C,Box<dyn Error>>
     where I: Iterator<Item = V> + Send, 
     F: Fn(V) -> T + Send,
     T: Send,
@@ -101,7 +101,7 @@ impl WorkerThreads
     /// Task Loop runs the functions within each spawned thread. The Loop runs till the thread is able 
     /// to pop a value from the Iterator. Once there are no more values from the iterator, the loop breaks and
     /// the thread returns all values obtained till that point
-    pub fn task_loop<I,F,T,V>(task:Arc<Mutex<Tasks<I,V,F,T>>>, f:F) -> Vec<T> 
+    pub fn task_loop<I,F,T,V>(task:Arc<Mutex<ParallelTask<I,V,F,T>>>, f:F) -> Vec<T> 
     where I: Iterator<Item = V> + Send, 
     F: Fn(V) -> T + Send,
     T: Send,

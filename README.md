@@ -7,7 +7,7 @@ The main.rs runs a set of jobs on rayon and this new library. The results show c
 
 ## Usage example
 This crate enables parallel_task to be called on any iter and the result may be collected in to a Vec, HashMap or VecDeque.
-
+```
 use parallel_task::prelude::*;
 let job = || {              
         std::thread::sleep(Duration::from_nanos(10)); 
@@ -16,3 +16,4 @@ let job = || {
 let vec_jobs = (0..100_000).map(|_|job).collect::<Vec<_>>(); 
 
 let r1 = vec_jobs.iter().parallel_task(|func| func()).collect::<Vec<i32>>();
+```

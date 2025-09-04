@@ -1,4 +1,4 @@
-# parallel_tasker
+# parallel_task
 Build a data parallelism library similar to Rayon with comparable performance as a simpler replacement for most use cases.
 
 ParallelTaskIter is an experiment to create a simple module to help manage CPU intensive jobs across threads. This proposes that a work stealing algorithm is not always necessary and a simple pull (.next) based approach can be equally effective in specific use case.

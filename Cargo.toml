@@ -6,7 +6,7 @@ authors = ["Jayanth Ravindran <jayanth.ravindran@gmail.com>"]
 description = "A simple data parallelism library for Rust"
 license = "MIT"
 repository = "https://github.com/jravz/parallel_tasker"
-keywords = ["concurrency", "cpu bound", "data parallelism"]
+keywords = ["concurrency", "cpu", "parallelism", "thread", "multi-thread"]
 
 [dependencies]
 thiserror = "2.0.16"

@@ -5,4 +5,5 @@ pub mod collector;
 pub mod worker_thread;
 pub mod errors;
 pub mod prelude;
+mod iterator;
 

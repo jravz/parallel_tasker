@@ -22,7 +22,7 @@ fn comparison_with_rayon() {
     println!("Non Parallel Time elapsed: {} microseconds.",tm.elapsed().as_micros());    
 
     let tm = std::time::Instant::now();    
-    let r1 = vec_jobs.iter().parallel_task(|func| func()).collect::<Vec<i32>>();
+    let r1 = vec_jobs.parallel_task(|func| func()).collect::<Vec<i32>>();
     println!("Parallel Task Time elapsed: {} microseconds.",tm.elapsed().as_micros());       
 
     let tm = std::time::Instant::now();      
@@ -34,13 +34,13 @@ fn comparison_with_rayon() {
 
 #[test]
 fn length_test() {      
-    let res = (0..100_000).parallel_task(|val|val).collect::<Vec<i32>>();
+    let res = (0..100_000).collect::<Vec<_>>().parallel_task(|val|*val).collect::<Vec<_>>();
     assert_eq!(res.len(),100_000)
 }
 
 #[test]
 fn value_test() {      
-    let mut res = (0..10_000).parallel_task(|val|val).collect::<Vec<i32>>();
+    let mut res = (0..10_000).collect::<Vec<_>>().parallel_task(|val|*val).collect::<Vec<_>>();
     res.sort();
     let test = (0..10_000).collect::<Vec<i32>>();
     assert_eq!(res,test)
@@ -48,7 +48,7 @@ fn value_test() {
 
 #[test]
 fn fail_value_test() {      
-    let mut res = (0..10_000).parallel_task(|val|val+1).collect::<Vec<i32>>();
+    let mut res = (0..10_000).collect::<Vec<_>>().parallel_task(|val|val+1).collect::<Vec<i32>>();
     res.sort();
     let test = (0..10_000).collect::<Vec<i32>>();
     assert_ne!(res,test)

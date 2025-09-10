@@ -3,17 +3,16 @@
 //! there are Items to pull from the Iterator. Whenever a thread becomes free it pulls a new Item
 //! and runs the closure function on the same
 
-use std::{error::Error, fmt::Debug, pin::Pin, sync::{atomic::AtomicPtr, Arc, Mutex}};
-use super::iterator::*;
+use std::{pin::Pin, sync::{atomic::AtomicPtr, Arc}};
 
-use crate::{collector::Collector, iterators::iterator::AtomicIterator, parallel_task::{ParallelTask, TaskQueue}};
+use crate::{collector::Collector, iterators::iterator::AtomicIterator, map::ParallelMap, task_queue::TaskQueue};
 
 pub struct WorkerThreads {pub nthreads:usize }
 
 #[allow(dead_code)]
 impl WorkerThreads
 {
-    pub fn collect<I,F,T,V,C>(self, mut task:ParallelTask<V,F,T,I>) -> C
+    pub fn collect<I,F,T,V,C>(self, mut task:ParallelMap<V,F,T,I>) -> C
     where I:AtomicIterator<AtomicItem = V> + Send + Sized,
     F: Fn(V) -> T + Send,
     V: Send,

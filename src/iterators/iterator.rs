@@ -31,7 +31,7 @@ impl<T:Fetch> ParallelIter for T
         ParallelIterator {
             item: self,
             atomic_counter: AtomicUsize::new(0),
-            collection_keys: <T as Fetch>::keys_vec(&self)
+            collection_keys: <T as Fetch>::keys_vec(self)
         }
      }      
     

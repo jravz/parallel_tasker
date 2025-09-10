@@ -1,4 +1,4 @@
-use parallel_task::prelude::{ParallelIter,ParallelTaskIter};
+use parallel_task::prelude::{ParallelIter,ParallelMapIter};
 use sysinfo::System;
 use rand::Rng;
 use rayon::prelude::*;
@@ -50,14 +50,14 @@ fn consecutive_heavy_process() {
     let jobs = (0..10_000).map(|_|job1).collect::<Vec<_>>();
 
     print_process_memory("Before job1");
-    let _ = jobs.parallel_iter().parallel_task(|j|j()).collect::<Vec<i64>>();
+    let _ = jobs.parallel_iter().map(|j|j()).collect::<Vec<i64>>();
 
     print_process_memory("Post job1");
 
     let jobs = (0..10_000).map(|_|job2).collect::<Vec<_>>();
     
     print_process_memory("Before job2");
-    let _ = jobs.parallel_iter().parallel_task(|j|j()).collect::<Vec<u128>>();
+    let _ = jobs.parallel_iter().map(|j|j()).collect::<Vec<u128>>();
     print_process_memory("Post job2");
 
     println!("Parallel Task implementation - total time - {} milliseconds.",t1.elapsed().as_millis());

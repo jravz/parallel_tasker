@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::{Index, Range}, process::Output};
+use std::collections::HashMap;
 
 pub trait Fetch {
     type FetchedItem;
@@ -8,7 +8,7 @@ pub trait Fetch {
         Self: 'a;
 
     fn keys_vec(&self) -> Vec<Self::FetchKey>;
-    fn get_key<'b>(keys: &'b Vec<Self::FetchKey>, pos: &'b usize) -> Option<&'b Self::FetchKey>;
+    fn get_key<'b>(keys: &'b [Self::FetchKey], pos: &'b usize) -> Option<&'b Self::FetchKey>;
     fn atomic_get<'a>(&'a self, index: &Self::FetchKey) -> Option<Self::FetchRefItem<'a>>;
     fn atomic_fetch(&mut self, index: &Self::FetchKey) -> Option<Self::FetchedItem>;
 }
@@ -24,7 +24,7 @@ impl<T> Fetch for Vec<T>
         Vec::new()
     }
 
-    fn get_key<'a>(_:&Vec<usize>, pos:&'a usize) -> Option<&'a Self::FetchKey> {
+    fn get_key<'a>(_:&[usize], pos:&'a usize) -> Option<&'a Self::FetchKey> {
         Some(pos)
     } 
 
@@ -57,10 +57,10 @@ where
         Self: 'a;
 
     fn keys_vec(&self) -> Vec<Self::FetchKey> {
-        self.keys().map(|k| k.clone()).collect::<Vec<K>>()
+        self.keys().cloned().collect::<Vec<K>>()
     }
 
-    fn get_key<'b>(keys: &'b Vec<K>, pos: &'b usize) -> Option<&'b Self::FetchKey> {
+    fn get_key<'b>(keys: &'b [K], pos: &'b usize) -> Option<&'b Self::FetchKey> {
         keys.get(*pos)
     }
 

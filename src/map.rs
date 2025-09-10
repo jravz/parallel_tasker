@@ -3,6 +3,7 @@ const CPU_2_THREAD_RATIO:usize = 2;
 
 use std::marker::PhantomData;
 use std::pin::Pin;
+use crate::task_queue::TaskQueue;
 use crate::worker_thread::WorkerThreads;
 use super::iterators::iterator::*;
 
@@ -17,18 +18,18 @@ use super::collector::*;
 /// assert_eq!(res.len(),100_000)
 /// ```
 /// 
-pub trait ParallelTaskIter<I, V,F,T>
+pub trait ParallelMapIter<I, V,F,T>
 where Self: AtomicIterator<AtomicItem = V> + Send + Sized,
 F: Fn(V) -> T + Send,
 V: Send,
 T:Send 
 {
-    fn parallel_task(self,f:F) -> ParallelTask<V,F,T,Self>{
-        ParallelTask::new(self,f)
+    fn map(self,f:F) -> ParallelMap<V,F,T,Self>{
+        ParallelMap::new(self,f)
     }
 }
 
-impl<I,V,F,T> ParallelTaskIter<I, V,F,T> for I 
+impl<I,V,F,T> ParallelMapIter<I, V,F,T> for I 
 where I: AtomicIterator<AtomicItem = V> + Send + Sized,
 F: Fn(V) -> T + Send,
 V: Send,
@@ -36,7 +37,7 @@ T:Send {}
 
 /// Tasks is a structure type that captures the information necessary to run the values within the Iterator in parallel
 /// Its the result of parallel_task that can be run on any Iterator implementing type.
-pub struct ParallelTask<V,F,T,I>
+pub struct ParallelMap<V,F,T,I>
 where I: AtomicIterator<AtomicItem = V> + Send + Sized,
 F: Fn(V) -> T + Send,
 V: Send,
@@ -49,24 +50,8 @@ T:Send
     pub t: PhantomData<T>,
 }
 
-pub struct TaskQueue<I,V> 
-where I:AtomicIterator<AtomicItem = V> + Send + Sized,
-V: Send
-{
-    pub iter: I
-}
-
-impl<I,V> TaskQueue<I,V> 
-where I:AtomicIterator<AtomicItem = V> + Send + Sized,
-V:Send
-{
-    pub fn pop(&mut self) -> Option<V> {
-        self.iter.atomic_next()
-    }
-}
-
 #[allow(dead_code)]
-impl<'a, I,V,F,T> ParallelTask<V,F,T,I>
+impl<I,V,F,T> ParallelMap<V,F,T,I>
 where I:AtomicIterator<AtomicItem = V> + Send + Sized,
 F: Fn(V) -> T + Send,
 V: Send,
@@ -75,11 +60,11 @@ T:Send
     pub fn new(iter:I,f:F) -> Self
     {                   
         Self {
-            iter: TaskQueue { iter: iter },
+            iter: TaskQueue { iter },
             f:Box::pin(f),
             num_threads: Self::max_threads(),
-            v: PhantomData::default(),
-            t: PhantomData::default()    
+            v: PhantomData,
+            t: PhantomData    
         }
     }
 

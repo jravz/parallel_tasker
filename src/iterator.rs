@@ -5,20 +5,26 @@ pub trait ParallelIter
 where Self:Sized,
 {   
     type Item; 
-    fn atomic_iter(&self) -> ParallelIterator<'_,Self>;
+    fn parallel_iter(&self) -> ParallelIterator<'_,Self>;
     fn atomic_get(&self, index:usize) -> Option<&Self::Item>;
     fn atomic_get_mut(&mut self, index:usize) -> Option<&mut Self::Item>;       
 }
+
 
 pub struct ParallelIterator<'a, T:'a> {
     item: &'a T,
     atomic_counter:AtomicUsize
 }
 
+pub struct IntoParallelIterator<T> {
+    item: T,
+    atomic_counter:AtomicUsize
+}
+
 impl<T> ParallelIter for Vec<T>
 {    
     type Item = T;
-    fn atomic_iter(&self) -> ParallelIterator<'_, Vec<T>> { 
+    fn parallel_iter(&self) -> ParallelIterator<'_, Vec<T>> { 
         ParallelIterator {
             item: self,
             atomic_counter: AtomicUsize::new(0)

@@ -75,7 +75,7 @@ T:Send
     pub fn new(iter:&'a I,f:F) -> Self
     {                   
         Self {
-            iter: TaskQueue { iter: iter.atomic_iter() },
+            iter: TaskQueue { iter: iter.parallel_iter() },
             f:Box::pin(f),
             num_threads: Self::max_threads(),
             v: PhantomData::default(),

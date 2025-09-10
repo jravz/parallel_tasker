@@ -9,6 +9,7 @@ repository = "https://github.com/jravz/parallel_tasker"
 keywords = ["concurrency", "cpu", "parallelism", "thread", "multi-thread"]
 
 [dependencies]
+rayon = "1.11.0"
 thiserror = "2.0.16"
 
 [dev-dependencies]

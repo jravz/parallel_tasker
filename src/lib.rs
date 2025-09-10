@@ -7,3 +7,4 @@ pub mod errors;
 pub mod prelude;
 pub mod iterators;
 pub mod task_queue;
+pub mod for_each;

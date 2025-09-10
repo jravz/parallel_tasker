@@ -5,13 +5,33 @@
 
 use std::{pin::Pin, sync::{atomic::AtomicPtr, Arc}};
 
-use crate::{collector::Collector, iterators::iterator::AtomicIterator, map::ParallelMap, task_queue::TaskQueue};
+use crate::{collector::Collector, for_each::ParallelForEach, iterators::iterator::AtomicIterator, map::ParallelMap, task_queue::TaskQueue};
 
 pub struct WorkerThreads {pub nthreads:usize }
 
 #[allow(dead_code)]
 impl WorkerThreads
 {
+    pub fn run<I,F,V>(self, mut task:ParallelForEach<V,F,I>)
+    where I:AtomicIterator<AtomicItem = V> + Send + Sized,
+    F: FnMut(V) + Send,
+    V: Send,    
+    {
+        let arc_mut_task: Arc<AtomicPtr<TaskQueue<I, V>>> = Arc::new(AtomicPtr::new(Box::into_raw(Box::new(task.iter))));        
+        for _ in 0..self.nthreads {
+            let builder = std::thread::Builder::new();            
+            unsafe {  
+                let arc_mut_task_clone = arc_mut_task.clone();
+                let arc_func_clone = *Box::from_raw(Pin::get_unchecked_mut(task.f.as_mut()));
+                let _ = builder.spawn_unchecked(move || 
+                    {
+                        Self::for_each_loop(arc_mut_task_clone, arc_func_clone)
+                });                
+            };                     
+        }
+
+    }
+
     pub fn collect<I,F,T,V,C>(self, mut task:ParallelMap<V,F,T,I>) -> C
     where I:AtomicIterator<AtomicItem = V> + Send + Sized,
     F: Fn(V) -> T + Send,
@@ -40,10 +60,12 @@ impl WorkerThreads
     }    
 
     
+    
+    
     /// Task Loop runs the functions within each spawned thread. The Loop runs till the thread is able 
     /// to pop a value from the Iterator. Once there are no more values from the iterator, the loop breaks and
     /// the thread returns all values obtained till that point
-    pub fn task_loop<I,F,T,V>(task:Arc<AtomicPtr<TaskQueue<I, V>>>, f:F) -> Vec<T> 
+    fn task_loop<I,F,T,V>(task:Arc<AtomicPtr<TaskQueue<I, V>>>, f:F) -> Vec<T> 
     where I:AtomicIterator<AtomicItem = V> + Send + Sized,
     F: Fn(V) -> T + Send,
     V: Send,
@@ -70,8 +92,38 @@ impl WorkerThreads
             res.push(result);                     
         }                
         // tot_time = ttm.elapsed().as_micros();
-        // println!("ID: {:?} -> total time = {} ms, waiting time = {}",threadid, tot_time, waiting_time);
+        // println!("ID: {:?} -> total time = {} micros, waiting time = {} micros",threadid, tot_time, waiting_time);
         res
+    }
+
+    /// Task Loop runs the functions within each spawned thread. The Loop runs till the thread is able 
+    /// to pop a value from the Iterator. Once there are no more values from the iterator, the loop breaks and
+    /// the thread returns all values obtained till that point
+    fn for_each_loop<I,F,V>(task:Arc<AtomicPtr<TaskQueue<I,V>>>, mut f:F)
+    where I:AtomicIterator<AtomicItem = V> + Send + Sized,
+    F: FnMut(V),
+    V: Send,    
+    {   
+        // let threadid = std::thread::current().id();
+        // let mut tot_time = 0;
+        // let mut waiting_time = 0;                  
+        // let ttm = std::time::Instant::now();      
+        while let Some(input) = {
+            // let tm = std::time::Instant::now();
+            let val = if let Some(task_mutex) = unsafe { task.load(std::sync::atomic::Ordering::Acquire).as_mut()} 
+            {
+                task_mutex.pop()
+            } else {
+                None
+            };
+            // waiting_time += tm.elapsed().as_micros();
+            val
+        } 
+        {           
+            f(input);                                                       
+        }                
+        // tot_time = ttm.elapsed().as_micros();
+        // println!("ID: {:?} -> total time = {} micros, waiting time = {} micros",threadid, tot_time, waiting_time);        
     }
 }
 

@@ -4,7 +4,7 @@ const CPU_2_THREAD_RATIO:usize = 2;
 use std::marker::PhantomData;
 use std::pin::Pin;
 use crate::worker_thread::WorkerThreads;
-use super::iterator::*;
+use super::iterators::iterator::*;
 
 use super::collector::*;
 
@@ -13,69 +13,69 @@ use super::collector::*;
 /// ```
 /// use parallel_task::prelude::*;
 /// 
-/// let res = (0..100_000).collect::<Vec<i32>>().parallel_task(|val|*val).collect::<Vec<i32>>();
+/// let res = (0..100_000).collect::<Vec<i32>>().parallel_iter().parallel_task(|val|*val).collect::<Vec<i32>>();
 /// assert_eq!(res.len(),100_000)
 /// ```
 /// 
-pub trait ParallelTaskIter<'a, I, V,F,T>
-where Self: ParallelIter<Item = V> + Send + Sized,
-F: Fn(&V) -> T + Send,
+pub trait ParallelTaskIter<I, V,F,T>
+where Self: AtomicIterator<AtomicItem = V> + Send + Sized,
+F: Fn(V) -> T + Send,
 V: Send,
 T:Send 
 {
-    fn parallel_task(&'a self,f:F) -> ParallelTask<'a, V,F,T,Self>{
+    fn parallel_task(self,f:F) -> ParallelTask<V,F,T,Self>{
         ParallelTask::new(self,f)
     }
 }
 
-impl<'a,I,V,F,T> ParallelTaskIter<'a, I, V,F,T> for I 
-where I: ParallelIter<Item = V> + Send + Sized,
-F: Fn(&V) -> T + Send,
+impl<I,V,F,T> ParallelTaskIter<I, V,F,T> for I 
+where I: AtomicIterator<AtomicItem = V> + Send + Sized,
+F: Fn(V) -> T + Send,
 V: Send,
 T:Send {}
 
 /// Tasks is a structure type that captures the information necessary to run the values within the Iterator in parallel
 /// Its the result of parallel_task that can be run on any Iterator implementing type.
-pub struct ParallelTask<'a, V,F,T,I>
-where  I:ParallelIter<Item = V> + Send + Sized,
-F: Fn(&V) -> T + Send,
+pub struct ParallelTask<V,F,T,I>
+where I: AtomicIterator<AtomicItem = V> + Send + Sized,
+F: Fn(V) -> T + Send,
 V: Send,
-T:Send
+T:Send 
 {
-    pub iter: TaskQueue<'a,I,V>,
+    pub iter: TaskQueue<I,V>,
     pub f:Pin<Box<F>>,
     pub num_threads:usize,
     pub v: PhantomData<V>,
     pub t: PhantomData<T>,
 }
 
-pub struct TaskQueue<'a,I,V> 
-where I:ParallelIter<Item = V> + Send + Sized,
+pub struct TaskQueue<I,V> 
+where I:AtomicIterator<AtomicItem = V> + Send + Sized,
 V: Send
 {
-    pub iter: ParallelIterator<'a,I>
+    pub iter: I
 }
 
-impl<'a,I,V> TaskQueue<'a,I,V> 
-where I:ParallelIter<Item = V> + Send + Sized,
+impl<I,V> TaskQueue<I,V> 
+where I:AtomicIterator<AtomicItem = V> + Send + Sized,
 V:Send
 {
-    pub fn pop(&mut self) -> Option<&V> {
+    pub fn pop(&mut self) -> Option<V> {
         self.iter.atomic_next()
     }
 }
 
 #[allow(dead_code)]
-impl<'a, I,V,F,T> ParallelTask<'a, V,F,T,I>
-where I:ParallelIter<Item = V> + Send + Sized,
-F: Fn(&V) -> T + Send,
+impl<'a, I,V,F,T> ParallelTask<V,F,T,I>
+where I:AtomicIterator<AtomicItem = V> + Send + Sized,
+F: Fn(V) -> T + Send,
 V: Send,
 T:Send
 {
-    pub fn new(iter:&'a I,f:F) -> Self
+    pub fn new(iter:I,f:F) -> Self
     {                   
         Self {
-            iter: TaskQueue { iter: iter.parallel_iter() },
+            iter: TaskQueue { iter: iter },
             f:Box::pin(f),
             num_threads: Self::max_threads(),
             v: PhantomData::default(),

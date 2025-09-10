@@ -6,21 +6,21 @@
 use std::{error::Error, fmt::Debug, pin::Pin, sync::{atomic::AtomicPtr, Arc, Mutex}};
 use super::iterator::*;
 
-use crate::{collector::Collector, errors::TaskError, parallel_task::ParallelTask, prelude::TaskQueue};
+use crate::{collector::Collector, iterators::iterator::AtomicIterator, parallel_task::{ParallelTask, TaskQueue}};
 
 pub struct WorkerThreads {pub nthreads:usize }
 
 #[allow(dead_code)]
 impl WorkerThreads
 {
-    pub fn collect<'a,I,F,T,V,C>(self, mut task:ParallelTask<'a, V,F,T,I>) -> C
-    where I:ParallelIter<Item = V> + Send + Sized,
-    F: Fn(&V) -> T + Send,
+    pub fn collect<I,F,T,V,C>(self, mut task:ParallelTask<V,F,T,I>) -> C
+    where I:AtomicIterator<AtomicItem = V> + Send + Sized,
+    F: Fn(V) -> T + Send,
     V: Send,
     T:Send,
     C: Collector<T> {
         let mut vec_handles = Vec::new();                        
-        let arc_mut_task: Arc<AtomicPtr<TaskQueue<'a, I, V>>> = Arc::new(AtomicPtr::new(Box::into_raw(Box::new(task.iter))));        
+        let arc_mut_task: Arc<AtomicPtr<TaskQueue<I, V>>> = Arc::new(AtomicPtr::new(Box::into_raw(Box::new(task.iter))));        
         
         for _ in 0..self.nthreads {
             let builder = std::thread::Builder::new();            
@@ -44,9 +44,9 @@ impl WorkerThreads
     /// Task Loop runs the functions within each spawned thread. The Loop runs till the thread is able 
     /// to pop a value from the Iterator. Once there are no more values from the iterator, the loop breaks and
     /// the thread returns all values obtained till that point
-    pub fn task_loop<'a,I,F,T,V>(task:Arc<AtomicPtr<TaskQueue<'a, I, V>>>, f:F) -> Vec<T> 
-    where I:ParallelIter<Item = V> + Send + Sized,
-    F: Fn(&V) -> T + Send,
+    pub fn task_loop<I,F,T,V>(task:Arc<AtomicPtr<TaskQueue<I, V>>>, f:F) -> Vec<T> 
+    where I:AtomicIterator<AtomicItem = V> + Send + Sized,
+    F: Fn(V) -> T + Send,
     V: Send,
     T:Send
     {   

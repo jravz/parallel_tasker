@@ -14,7 +14,6 @@ pub trait Fetch {
 }
 
 impl<T> Fetch for Vec<T>
-where T:Default
 {        
     type FetchedItem = T;        
     type FetchKey = usize;
@@ -48,8 +47,7 @@ where T:Default
 
 
 impl<K, V> Fetch for HashMap<K, V>
-where
-    V: Default,
+where    
     K: std::cmp::Eq + std::hash::Hash + Clone,
 {
     type FetchedItem = (K, V);

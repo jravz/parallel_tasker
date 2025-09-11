@@ -7,6 +7,12 @@ Please try at your end and share your feedback at jayanth.ravindran@gmail.com.
 
 ## Usage example
 This crate enables parallel_task to be called on any iter and the result may be collected in to a Vec, HashMap or VecDeque.
+
+Add this using:
+```
+cargo add parallel_task
+```
+
 ```
 use parallel_task::prelude::*;
 let job = || {              

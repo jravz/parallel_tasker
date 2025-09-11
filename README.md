@@ -3,7 +3,7 @@ A super fast data parallelism library with performance comparable or better to R
 
 The tests runs a set of jobs on rayon and this new library. The results show comparable performance and in a number of cases slightly improved performance for this library. No study has been done to establish whether the results are significant.
 
-Please share your feedback at jayanth.ravindran@gmail.com.
+Please try at your end and share your feedback at jayanth.ravindran@gmail.com.
 
 ## Usage example
 This crate enables parallel_task to be called on any iter and the result may be collected in to a Vec, HashMap or VecDeque.

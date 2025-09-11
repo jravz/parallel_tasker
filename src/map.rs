@@ -9,12 +9,11 @@ use super::iterators::iterator::*;
 
 use super::collector::*;
 
-/// ParallelTaskIter is an experiment to create a simple module to help manage CPU intensive jobs across threads. This proposes
-/// that a work stealing algorithm is not always necessary and a simple pull (.next) based approach can be equally effective in specific use case.
+/// ParallelMapIter allows calling the .map(f) on type implementing AtomicIterator to get a ParallelMap object on which collect may be called.
 /// ```
 /// use parallel_task::prelude::*;
 /// 
-/// let res = (0..100_000).collect::<Vec<i32>>().parallel_iter().parallel_task(|val|*val).collect::<Vec<i32>>();
+/// let res = (0..100_000).collect::<Vec<i32>>().parallel_iter().map(|val|*val).collect::<Vec<i32>>();
 /// assert_eq!(res.len(),100_000)
 /// ```
 /// 
@@ -68,8 +67,8 @@ T:Send
         }
     }
 
-    fn max_threads() -> usize {
-        // available_parallelism() function gives an idea of the CPUs available 
+    /// Available_parallelism() function gives an idea of the CPUs available. 
+    fn max_threads() -> usize {        
         let num_threads:usize = if let Ok(available_cpus) = std::thread::available_parallelism() {
             available_cpus.get()
         } else {
@@ -79,12 +78,13 @@ T:Send
         num_threads
     }
 
-    /// Set the thread pool size for running the parallel tasker    
+    /// Set the thread pool size for running the parallel tasker.    
     pub fn threads(mut self, nthreads:usize) -> Self {
         self.num_threads = usize::min(Self::max_threads(),nthreads);
         self
     }
-        
+
+    /// Collect the results of the Map in a type implementing Collector trait    
     pub fn collect<C>(self) -> C
     where C: Collector<T>
     {                

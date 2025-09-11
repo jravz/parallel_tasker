@@ -7,13 +7,12 @@ use crate::task_queue::TaskQueue;
 use crate::worker_thread::WorkerThreads;
 use super::iterators::iterator::AtomicIterator;
 
-/// ParallelTaskIter is an experiment to create a simple module to help manage CPU intensive jobs across threads. This proposes
-/// that a work stealing algorithm is not always necessary and a simple pull (.next) based approach can be equally effective in specific use case.
+/// ParallelForEachIter allows calling the .for_each(f) to run a FnMut function on type implementing AtomicIterator
 /// ```
 /// use parallel_task::prelude::*;
 /// 
-/// let res = (0..100_000).collect::<Vec<i32>>().parallel_iter().parallel_task(|val|*val).collect::<Vec<i32>>();
-/// assert_eq!(res.len(),100_000)
+/// (0..100_000).collect::<Vec<i32>>().parallel_iter().for_each(|val|{ print!(" {}",val);});
+/// assert_eq!(1,1)
 /// ```
 /// 
 pub trait ParallelForEachIter<I, V,F>

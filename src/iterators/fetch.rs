@@ -1,5 +1,7 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::Range};
 
+/// Fetch trait implementation for Item is key for the ParallelIterator and IntoParallelIterator structs.
+/// It has been implemented on Vec<T> and HashMap<K,V> and the same may be used with AtomicIterator
 pub trait Fetch {
     type FetchedItem;
     type FetchKey;
@@ -72,3 +74,5 @@ where
         self.remove_entry(index)
     }
 }
+
+

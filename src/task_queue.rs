@@ -1,5 +1,8 @@
 use crate::prelude::AtomicIterator;
 
+
+/// TaskQueue stores the AtomicIterator that allows a unique value to be popped up for each
+/// thread that enquires the same. 
 pub struct TaskQueue<I,V> 
 where I:AtomicIterator<AtomicItem = V> + Send + Sized,
 V: Send
@@ -11,6 +14,8 @@ impl<I,V> TaskQueue<I,V>
 where I:AtomicIterator<AtomicItem = V> + Send + Sized,
 V:Send
 {
+    /// Pops a unique value from the TaskQueue. It returns None when all values are done, which is the 
+    /// signal for the threads to (return and) exit.
     pub fn pop(&mut self) -> Option<V> {
         self.iter.atomic_next()
     }

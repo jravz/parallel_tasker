@@ -8,7 +8,6 @@ The results show comparable performance to the popular Rayon library and in a nu
 Please try at your end and share your feedback at jayanth.ravindran@gmail.com.
 
 ## Usage example
-This crate enables parallel_task to be called on any iter and the result may be collected in to a Vec, HashMap or VecDeque.
 
 Add this using:
 ```

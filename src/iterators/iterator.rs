@@ -1,3 +1,10 @@
+//! AtomicIterator is a trait implementd on ParallelIterator and IntoParallelIterator which are both
+//! available for types implementing the Fetch trait.
+//! AtomicIterator and Fetch traits together help in establishing a 1 to 1 relationship with a value
+//! stored in the Collection to a usize value. Further using a counter of AtomicUsize type which is indivisible
+//! it ensures that each thread does not get the same value as another thread. Allowing threads to
+//! access values in the Collection in a mutually exclusive manner.
+
 use std::sync::atomic::AtomicUsize;
 
 use crate::iterators::fetch::Fetch;

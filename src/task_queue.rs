@@ -1,8 +1,8 @@
+//! TaskQueue stores the AtomicIterator that allows a unique value to be popped up for each
+//! thread that enquires the same. 
+//! 
 use crate::prelude::AtomicIterator;
 
-
-/// TaskQueue stores the AtomicIterator that allows a unique value to be popped up for each
-/// thread that enquires the same. 
 pub struct TaskQueue<I,V> 
 where I:AtomicIterator<AtomicItem = V> + Send + Sized,
 V: Send

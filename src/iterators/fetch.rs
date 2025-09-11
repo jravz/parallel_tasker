@@ -1,7 +1,9 @@
-use std::{collections::HashMap, ops::Range};
+use std::collections::HashMap;
 
 /// Fetch trait implementation for Item is key for the ParallelIterator and IntoParallelIterator structs.
-/// It has been implemented on Vec<T> and HashMap<K,V> and the same may be used with AtomicIterator
+/// It has been implemented on Vec<T> and HashMap<K,V> and the same may be used with AtomicIterator.
+/// AtomicIterator depends on the ability to create a 1 to 1 association with a usize value less than len and a stored
+/// value within the type.
 pub trait Fetch {
     type FetchedItem;
     type FetchKey;
@@ -9,6 +11,7 @@ pub trait Fetch {
     where
         Self: 'a;
 
+    /// return a vector of keys. Required for HashMap. For Vec this
     fn keys_vec(&self) -> Vec<Self::FetchKey>;
     fn get_key<'b>(keys: &'b [Self::FetchKey], pos: &'b usize) -> Option<&'b Self::FetchKey>;
     fn atomic_get<'a>(&'a self, index: &Self::FetchKey) -> Option<Self::FetchRefItem<'a>>;

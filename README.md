@@ -1,7 +1,9 @@
 # Parallel Task Crate
-A super fast data parallelism library with performance comparable or better to Rayon using Atomics to share data across threads and uniquely pull values from Collections such as Vec or HashMap. It follows a 'pull' approach and tries to reduce the time required for the thread to pick the next value.
+A super fast data parallelism library using Atomics to share data across threads and uniquely pull values from Collections such as Vec or HashMap. It follows a 'pull' approach and tries to reduce the time required for the thread to pick the next value. The key question was can the time taken by thread to get the next job be kept minimal.
+This is achieved by using an AtomicIterator that generates a mutually exclusive usize value for each thread that corresponds to a unique stored value in the Collection. 
+Hence, all types that implement the Fetch Trait (Vec and HashMap) can be consumed or passed by reference to run Map or ForEach functions on the same.
 
-The tests runs a set of jobs on rayon and this new library. The results show comparable performance and in a number of cases slightly improved performance for this library. No study has been done to establish whether the results are significant.
+The results show comparable performance to the popular Rayon library and in a number of cases improved performance as well. No study has been done to establish whether the results are significant.
 
 Please try at your end and share your feedback at jayanth.ravindran@gmail.com.
 
@@ -28,5 +30,6 @@ let r1 = vec_jobs.parallel_iter().map(|func| func()).collect::<Vec<i32>>();
 let r1 = vec_jobs.into_parallel_iter().map(|func| func()).collect::<Vec<i32>>();
 
 // Print all values using a for_each. This runs for_each concurrently on a Vec or HashMap
-
+r1.parallel_iter().for_each(|val| { print!("{} ",*val);});
+```
 

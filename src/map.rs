@@ -1,3 +1,4 @@
+//! ParallelMap is a structure type that captures the Map object and function necessary to run the values within the AtomicIterator in parallel.
 const DEFAULT_THREADS_NUM:usize = 1;
 const CPU_2_THREAD_RATIO:usize = 2;
 
@@ -34,8 +35,6 @@ F: Fn(V) -> T + Send,
 V: Send,
 T:Send {}
 
-/// Tasks is a structure type that captures the information necessary to run the values within the Iterator in parallel
-/// Its the result of parallel_task that can be run on any Iterator implementing type.
 pub struct ParallelMap<V,F,T,I>
 where I: AtomicIterator<AtomicItem = V> + Send + Sized,
 F: Fn(V) -> T + Send,
@@ -49,6 +48,16 @@ T:Send
     pub t: PhantomData<T>,
 }
 
+/// ParallelMap is a object that allows map function to be run on AtomicIterators.
+/// The results may be then collected in types implementing Collector trait.
+/// 
+/// ```
+/// use parallel_task::prelude::*;
+/// 
+/// let res = (0..100_000).collect::<Vec<i32>>().parallel_iter().map(|val|*val).collect::<Vec<i32>>();
+/// assert_eq!(res.len(),100_000)
+/// ```
+/// 
 #[allow(dead_code)]
 impl<I,V,F,T> ParallelMap<V,F,T,I>
 where I:AtomicIterator<AtomicItem = V> + Send + Sized,

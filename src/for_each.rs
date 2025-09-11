@@ -1,3 +1,7 @@
+//! ParallelForEach object is implemented for AtomicIterator and hence for types implementing
+//! Fetch trait. This allows an FnMut function to be run on each value of the collection implementing
+//! Fetch.
+
 const DEFAULT_THREADS_NUM:usize = 1;
 const CPU_2_THREAD_RATIO:usize = 2;
 
@@ -33,6 +37,13 @@ V: Send,
 
 /// Tasks is a structure type that captures the information necessary to run the values within the Iterator in parallel
 /// Its the result of parallel_task that can be run on any Iterator implementing type.
+/// ```
+/// use parallel_task::prelude::*;
+/// 
+/// (0..100_000).collect::<Vec<i32>>().parallel_iter().for_each(|val|{ print!(" {}",val);});
+/// assert_eq!(1,1)
+/// ```
+/// 
 pub struct ParallelForEach<V,F,I>
 where I: AtomicIterator<AtomicItem = V> + Send + Sized,
 F: FnMut(V),

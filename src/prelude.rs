@@ -1,3 +1,7 @@
+//! Adding this module as parallel_task::prelude::* gives access to the desired
+//! functionalities.
+//! 
+
 pub use crate::iterators::prelude::{AtomicIterator,Fetch,ParallelIter};
 pub use crate::{
     map::ParallelMapIter,

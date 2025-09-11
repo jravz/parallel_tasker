@@ -7,7 +7,7 @@ Please try at your end and share your feedback at jayanth.ravindran@gmail.com.
 
 ## Usage example
 This crate enables parallel_task to be called on any iter and the result may be collected in to a Vec, HashMap or VecDeque.
-
+```
 use parallel_task::prelude::*;
 let job = || {              
         std::thread::sleep(Duration::from_nanos(10)); 

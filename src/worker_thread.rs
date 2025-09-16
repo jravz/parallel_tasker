@@ -14,7 +14,7 @@ impl WorkerThreads
 {
     pub fn run<I,F,V>(self, mut task:ParallelForEach<V,F,I>)
     where I:AtomicIterator<AtomicItem = V> + Send + Sized,
-    F: FnMut(V) + Send,
+    F: Fn(V) + Send,
     V: Send,    
     {
         let arc_mut_task: Arc<AtomicPtr<TaskQueue<I, V>>> = Arc::new(AtomicPtr::new(Box::into_raw(Box::new(task.iter))));        
@@ -99,9 +99,9 @@ impl WorkerThreads
     /// Task Loop runs the functions within each spawned thread. The Loop runs till the thread is able 
     /// to pop a value from the Iterator. Once there are no more values from the iterator, the loop breaks and
     /// the thread returns all values obtained till that point
-    fn for_each_loop<I,F,V>(task:Arc<AtomicPtr<TaskQueue<I,V>>>, mut f:F)
+    fn for_each_loop<I,F,V>(task:Arc<AtomicPtr<TaskQueue<I,V>>>, f:F)
     where I:AtomicIterator<AtomicItem = V> + Send + Sized,
-    F: FnMut(V),
+    F: Fn(V),
     V: Send,    
     {   
         // let threadid = std::thread::current().id();

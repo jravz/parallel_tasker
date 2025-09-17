@@ -10,7 +10,9 @@ use crate::task_queue::TaskQueue;
 use crate::worker_thread::WorkerThreads;
 use super::iterators::iterator::AtomicIterator;
 
-/// ParallelForEachMutIter allows calling the .for_each_mut(f) to run a FnMut function on type implementing AtomicIterator
+/// ParallelForEachMutIter allows calling the .for_each_mut(f) to run a FnMut function on type implementing AtomicIterator.
+/// FnMut in a parallel computation does not add any value. This has been added
+/// only for completion purposes.
 /// ```
 ///  use parallel_task::{for_each_mut::ParallelForEachMutIter, prelude::*};
 /// 

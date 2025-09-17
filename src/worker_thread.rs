@@ -3,9 +3,9 @@
 //! there are Items to pull from the AtomicIterator. Whenever a thread becomes free it pulls a new Item
 //! and runs the closure function on the same
 
-use std::{pin::Pin, sync::{atomic::AtomicPtr, Arc}};
+use std::{pin::Pin, sync::{atomic::AtomicPtr, Arc, Mutex}};
 
-use crate::{collector::Collector, for_each::ParallelForEach, iterators::iterator::AtomicIterator, map::ParallelMap, task_queue::TaskQueue};
+use crate::{collector::Collector, for_each::ParallelForEach, for_each_mut::ParallelForEachMut, iterators::iterator::AtomicIterator, map::ParallelMap, task_queue::TaskQueue};
 
 pub struct WorkerThreads {pub nthreads:usize }
 
@@ -26,6 +26,28 @@ impl WorkerThreads
                 let _ = builder.spawn_unchecked(move || 
                     {
                         Self::for_each_loop(arc_mut_task_clone, arc_func_clone)
+                });                
+            };                     
+        }
+
+    }
+
+    pub fn run_mut<I,F,V>(self, task:ParallelForEachMut<V,F,I>)
+    where I:AtomicIterator<AtomicItem = V> + Send + Sized,
+    F: FnMut(V) + Send,
+    V: Send,    
+    {
+        let arc_mut_task: Arc<AtomicPtr<TaskQueue<I, V>>> = Arc::new(AtomicPtr::new(Box::into_raw(Box::new(task.iter))));     
+        let fclosure = task.f;
+        let arc_mut_f = Arc::new(Mutex::new(fclosure));   
+        for _ in 0..self.nthreads {
+            let builder = std::thread::Builder::new();            
+            unsafe {  
+                let arc_mut_task_clone = arc_mut_task.clone();
+                let arc_mut_f_clone =  arc_mut_f.clone();              
+                let _ = builder.spawn_unchecked(move || 
+                    {
+                        Self::for_each_mut_loop(arc_mut_task_clone, arc_mut_f_clone)
                 });                
             };                     
         }
@@ -121,6 +143,38 @@ impl WorkerThreads
         } 
         {           
             f(input);                                                       
+        }                
+        // tot_time = ttm.elapsed().as_micros();
+        // println!("ID: {:?} -> total time = {} micros, waiting time = {} micros",threadid, tot_time, waiting_time);        
+    }
+
+    /// For Each Mut Loop runs the functions within each spawned thread. The Loop runs till the thread is able 
+    /// to pop a value from the Iterator. Once there are no more values from the iterator, the loop breaks and
+    /// the thread returns all values obtained till that point
+    /// Considering this uses a Mutex as the the closure is mut, this will be slower than other cases with Fn closures
+    fn for_each_mut_loop<I,F,V>(task:Arc<AtomicPtr<TaskQueue<I,V>>>, f:Arc<Mutex<F>>)
+    where I:AtomicIterator<AtomicItem = V> + Send + Sized,
+    F: FnMut(V),
+    V: Send,    
+    {   
+        // let threadid = std::thread::current().id();
+        // let mut tot_time = 0;
+        // let mut waiting_time = 0;                  
+        // let ttm = std::time::Instant::now();      
+        while let Some(input) = {
+            // let tm = std::time::Instant::now();
+            let val = if let Some(task_mutex) = unsafe { task.load(std::sync::atomic::Ordering::Acquire).as_mut()} 
+            {
+                task_mutex.pop()
+            } else {
+                None
+            };
+            // waiting_time += tm.elapsed().as_micros();
+            val
+        } 
+        {           
+            let mut fclosure = f.lock().unwrap();
+            fclosure(input);                                                       
         }                
         // tot_time = ttm.elapsed().as_micros();
         // println!("ID: {:?} -> total time = {} micros, waiting time = {} micros",threadid, tot_time, waiting_time);        

@@ -1,4 +1,4 @@
-use parallel_task::prelude::*;
+use parallel_task::{for_each_mut::ParallelForEachMutIter, prelude::*};
 
 fn main() {
     // Map being tested....
@@ -20,5 +20,13 @@ fn main() {
     println!("For Each test");
     res2.parallel_iter()
     .for_each(|val| { print!("{} ",*val);});
+
+    //testing mutability of for_each_mut
+    println!("For Each Mut test");
+    let mut test = 0;
+    let target = 100;
+    (0..=target).collect::<Vec<i32>>().
+    parallel_iter().for_each_mut(|v| { test += v;});
+    println!("X = {}, Expected = {}",test, (target * (target + 1)/2));
 
 }

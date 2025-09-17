@@ -6,66 +6,71 @@ const DEFAULT_THREADS_NUM:usize = 1;
 const CPU_2_THREAD_RATIO:usize = 2;
 
 use std::marker::PhantomData;
-use std::pin::Pin;
 use crate::task_queue::TaskQueue;
 use crate::worker_thread::WorkerThreads;
 use super::iterators::iterator::AtomicIterator;
 
-/// ParallelForEachIter allows calling the .for_each(f) to run a Fn function on type implementing AtomicIterator
+/// ParallelForEachMutIter allows calling the .for_each_mut(f) to run a FnMut function on type implementing AtomicIterator
 /// ```
-/// use parallel_task::prelude::*;
+///  use parallel_task::{for_each_mut::ParallelForEachMutIter, prelude::*};
 /// 
-/// (0..100_000).collect::<Vec<i32>>().parallel_iter().for_each(|val|{ print!(" {}",val);});
-/// assert_eq!(1,1)
+///  let mut test = 0;
+///  let target = 100;
+///  (0..=target).collect::<Vec<i32>>().
+///  parallel_iter().for_each_mut(|v| { test += v;});
+///  assert_eq!(test, (target * (target + 1)/2));
 /// ```
 /// 
-pub trait ParallelForEachIter<I, V,F>
+pub trait ParallelForEachMutIter<I, V,F>
 where Self: AtomicIterator<AtomicItem = V> + Send + Sized,
-F: Fn(V) + Send,
+F: FnMut(V) + Send,
 V: Send
 {
-    fn for_each(self,f:F) {
-        ParallelForEach::new(self,f).run()
+    fn for_each_mut(self,f:F) {
+        ParallelForEachMut::new(self,f).run()
     }
 }
 
-impl<I,V,F> ParallelForEachIter<I, V,F> for I 
+impl<I,V,F> ParallelForEachMutIter<I, V,F> for I 
 where I: AtomicIterator<AtomicItem = V> + Send + Sized,
-F: Fn(V) + Send,
+F: FnMut(V) + Send,
 V: Send,
 {}
 
-/// ParallelForEach is a structure type that captures the information necessary to run the values within the Iterator in parallel
+/// ParallelForEachMut is a structure type that captures the information necessary to run a FnMut closure within the Iterator in parallel
 /// Its the result of parallel_task that can be run on any Iterator implementing type.
 /// ```
-/// use parallel_task::prelude::*;
+///  use parallel_task::{for_each_mut::ParallelForEachMutIter, prelude::*};
 /// 
-/// (0..100_000).collect::<Vec<i32>>().parallel_iter().for_each(|val|{ print!(" {}",val);});
-/// assert_eq!(1,1)
+///  let mut test = 0;
+///  let target = 100;
+///  (0..=target).collect::<Vec<i32>>().
+///  parallel_iter().for_each_mut(|v| { test += v;});
+///  assert_eq!(test, (target * (target + 1)/2));
 /// ```
 /// 
-pub struct ParallelForEach<V,F,I>
+pub struct ParallelForEachMut<V,F,I>
 where I: AtomicIterator<AtomicItem = V> + Send + Sized,
-F: Fn(V),
+F: FnMut(V),
 V: Send
 {
     pub iter: TaskQueue<I,V>,
-    pub f:Pin<Box<F>>,
+    pub f:F,
     pub num_threads:usize,
     pub v: PhantomData<V>,    
 }
 
 #[allow(dead_code)]
-impl<I,V,F> ParallelForEach<V,F,I>
+impl<I,V,F> ParallelForEachMut<V,F,I>
 where I:AtomicIterator<AtomicItem = V> + Send + Sized,
-F: Fn(V) + Send,
+F: FnMut(V) + Send,
 V: Send,
 {
     pub fn new(iter:I,f:F) -> Self
     {                   
         Self {
             iter: TaskQueue { iter },
-            f:Box::pin(f),
+            f,
             num_threads: Self::max_threads(),
             v: PhantomData,            
         }
@@ -93,7 +98,7 @@ V: Send,
         let num_threads = self.num_threads;        
 
         WorkerThreads { nthreads: num_threads }
-        .run(self)      
+        .run_mut(self)      
         
     }
 }

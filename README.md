@@ -32,3 +32,33 @@ let r1 = vec_jobs.into_parallel_iter().map(|func| func()).collect::<Vec<i32>>();
 r1.parallel_iter().for_each(|val| { print!("{} ",*val);});
 ```
 
+# ShareableAtomicIter:
+ShareableAtomicIter enables Vec and HashMap that implement the Fetch trait to easily distributed across threads. Values can be safely accessed without any risk of overlaps. Thus allowing you to design how you wish to process these collections across your threads.
+```
+use parallel_task::prelude::*;
+
+// Test out the AtomicIterator for parallel management of Vectors without risk of overlaps
+   let values = (0..100).map(|x|x).collect::<Vec<_>>();
+
+   std::thread::scope(|s| 
+   {
+     let shared_vec = values.into_parallel_iter().as_arc();
+     let share_clone = shared_vec.clone();
+     s.spawn(move || {
+        let tid = std::thread::current().id();
+        while let Some(val) = shared_vec.next(){
+            print!(" [{:?}: {}] ",tid,val);
+        }
+        });
+
+     s.spawn(move || {
+        let tid = std::thread::current().id();
+        while let Some(val) = share_clone.next(){
+            print!(" [{:?}: {}] ",tid,val);
+        }
+        });
+
+      }
+);
+```
+

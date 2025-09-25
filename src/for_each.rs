@@ -21,7 +21,7 @@ use super::iterators::iterator::AtomicIterator;
 /// 
 pub trait ParallelForEachIter<I, V,F>
 where Self: AtomicIterator<AtomicItem = V> + Send + Sized,
-F: Fn(V) + Send,
+F: Fn(V) + Send + Sync,
 V: Send
 {
     fn for_each(self,f:F) {
@@ -31,7 +31,7 @@ V: Send
 
 impl<I,V,F> ParallelForEachIter<I, V,F> for I 
 where I: AtomicIterator<AtomicItem = V> + Send + Sized,
-F: Fn(V) + Send,
+F: Fn(V) + Send + Sync,
 V: Send,
 {}
 
@@ -46,7 +46,7 @@ V: Send,
 /// 
 pub struct ParallelForEach<V,F,I>
 where I: AtomicIterator<AtomicItem = V> + Send + Sized,
-F: Fn(V),
+F: Fn(V) + Send + Sync,
 V: Send
 {
     pub iter: TaskQueue<I,V>,
@@ -58,7 +58,7 @@ V: Send
 #[allow(dead_code)]
 impl<I,V,F> ParallelForEach<V,F,I>
 where I:AtomicIterator<AtomicItem = V> + Send + Sized,
-F: Fn(V) + Send,
+F: Fn(V) + Send + Sync,
 V: Send,
 {
     pub fn new(iter:I,f:F) -> Self

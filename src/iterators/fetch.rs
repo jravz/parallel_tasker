@@ -34,6 +34,7 @@ impl<T> Fetch for Vec<T>
     } 
 
     fn atomic_get(&self, index:&usize) -> Option<&Self::FetchedItem> {
+        if self.len() <= *index { return None;}
         self.get(*index)
     }
 

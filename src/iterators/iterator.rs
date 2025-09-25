@@ -72,7 +72,7 @@ pub trait AtomicIterator {
 impl<'a,T:Fetch> AtomicIterator for ParallelIterator<'a,T> {
     type AtomicItem = <T as Fetch>::FetchRefItem<'a>;
     fn atomic_next(&mut self) -> Option<Self::AtomicItem> {
-        let index = self.atomic_counter.fetch_add(1, std::sync::atomic::Ordering::Acquire);
+        let index = self.atomic_counter.fetch_add(1, std::sync::atomic::Ordering::Acquire);        
         let key = <T as Fetch>::get_key(&self.collection_keys, &index);
         if let Some(key) = key {
             self.item.atomic_get(key)

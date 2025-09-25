@@ -36,7 +36,7 @@ impl WorkerThreads
 
         // allow all threads to finish
         for handle in vec_handles {           
-            let _ =  handle.unwrap().join().unwrap();            
+            handle.unwrap().join().unwrap();            
         }
 
     }
@@ -65,7 +65,7 @@ impl WorkerThreads
 
         // allow all threads to finish
         for handle in vec_handles {           
-            let _ =  handle.unwrap().join().unwrap();            
+            handle.unwrap().join().unwrap();            
         }
 
     }

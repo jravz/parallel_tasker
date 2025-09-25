@@ -42,7 +42,7 @@ use parallel_task::prelude::*;
 
    std::thread::scope(|s| 
    {
-     let shared_vec = values.into_parallel_iter().as_arc();
+     let shared_vec = values.into_parallel_iter().shareable();
      let share_clone = shared_vec.clone();
      s.spawn(move || {
         let tid = std::thread::current().id();

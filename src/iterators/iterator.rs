@@ -70,7 +70,7 @@ pub trait AtomicIterator {
 
     /// create a shareable iterator for safe access across threads without
     /// any overlaps
-    fn as_arc(self) -> Arc<ShareableAtomicIter<Self>> 
+    fn shareable(self) -> Arc<ShareableAtomicIter<Self>> 
     where Self:Sized
     {
         Arc::new(ShareableAtomicIter::new(self))
@@ -112,11 +112,10 @@ impl<T:Fetch> AtomicIterator for IntoParallelIterator<T> {
 /// use parallel_task::prelude::*;
 /// 
 /// // Test out the AtomicIterator for parallel management of Vectors without risk of overlaps
-///    let values = (0..100).map(|x|x).collect::<Vec<_>>();
-
+///    let values = (0..100).collect::<Vec<_>>();
 ///    std::thread::scope(|s| 
 ///    {
-///      let shared_vec = values.into_parallel_iter().as_arc();
+///      let shared_vec = values.into_parallel_iter().shareable();
 ///      let share_clone = shared_vec.clone();
 ///      s.spawn(move || {
 ///         let tid = std::thread::current().id();
@@ -124,14 +123,12 @@ impl<T:Fetch> AtomicIterator for IntoParallelIterator<T> {
 ///             print!(" [{:?}: {}] ",tid,val);
 ///         }
 ///         });
-
 ///      s.spawn(move || {
 ///         let tid = std::thread::current().id();
 ///         while let Some(val) = share_clone.next(){
 ///             print!(" [{:?}: {}] ",tid,val);
 ///         }
 ///         });
-
 ///      }
 /// );
 /// ```

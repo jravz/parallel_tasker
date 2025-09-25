@@ -1,21 +1,35 @@
 use parallel_task::prelude::*;
+use std::sync::Arc;
+use parallel_task::iterators::prelude::{ShareableAtomicIter, ParallelIter, ParallelIterator,AtomicIterator};
 
 fn main() {
 
     // Test out the AtomicIterator for parallel management of Vectors without risk of overlaps
-    let values = (0..100).map(|x|x).collect::<Vec<_>>();
+    
+    // Lets create a simple vector of 100 values that we wish to share across 
+    // two threads
+    let values = (0..100).collect::<Vec<_>>();
 
+    //Lets create a scope to run the two threads in parallel
     std::thread::scope(|s| 
         {
-            let shared_vec = values.into_parallel_iter().as_arc();
-            let share_clone = shared_vec.clone();
+            // use parallel_iter to share by reference and into_parallel_iter to consume the values
+            // Apply '.as_arc()' to get a ShareableAtomicIter within an Arc
+            let parallel_iter: parallel_task::iterators::prelude::ParallelIterator<'_, Vec<i32>> = values.parallel_iter();
+            let shared_vec: Arc<ShareableAtomicIter<ParallelIterator<'_, Vec<i32>>>> = parallel_iter.shareable();
+            //Get a clone for the second thread
+            let share_clone: Arc<ShareableAtomicIter<ParallelIterator<'_, Vec<i32>>>> = shared_vec.clone();
+            
+            // Lets spawn the first thread
             s.spawn(move || {
                 let tid = std::thread::current().id();
+                //Just do .next() and get unique values without overlap with other threads
                 while let Some(val) = shared_vec.next(){
                     print!(" [{:?}: {}] ",tid,val);
                 }
             });
 
+            // Lets spawn the second thread
             s.spawn(move || {
                 let tid = std::thread::current().id();
                 while let Some(val) = share_clone.next(){
@@ -25,7 +39,7 @@ fn main() {
 
         }
     );
-    // Map being tested....
+    //Map being tested....
     println!("Map Samples");
     //Samples with both parallel_iter and into_parallel_iter options below    
     let mut res = (0..30).collect::<Vec<_>>()

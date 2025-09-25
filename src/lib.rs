@@ -12,9 +12,9 @@
 //! 
 //! 
 //! Add this crate using:
-//! ```
+//! 
 //! cargo add parallel_task
-//! ```
+//! 
 //! 
 //! Code sample below:
 //! 
@@ -22,17 +22,14 @@
 //! use parallel_task::prelude::*;
 //! let job = || {              
 //! 
-//!     std::thread::sleep(Duration::from_nanos(10)); 
+//!     std::thread::sleep(std::time::Duration::from_nanos(10)); 
 //!     (0..1_000).sum::<i32>()
 //!  };
 //! let vec_jobs = (0..100_000).map(|_|job).collect::<Vec<_>>(); 
-
-//!  Parallel Iter example
+//! // Parallel Iter example
 //! let r1 = vec_jobs.parallel_iter().map(|func| func()).collect::<Vec<i32>>();
-
 //! // Into Parallel Iter that consumes the vec_jobs
 //! let r1 = vec_jobs.into_parallel_iter().map(|func| func()).collect::<Vec<i32>>();
-
 //! // Print all values using a for_each. This runs for_each concurrently on a Vec or HashMap
 //! r1.parallel_iter().for_each(|val| { print!("{} ",*val);});
 //! ```

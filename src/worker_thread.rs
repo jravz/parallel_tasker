@@ -3,7 +3,7 @@
 //! there are Items to pull from the AtomicIterator. Whenever a thread becomes free it pulls a new Item
 //! and runs the closure function on the same
 
-use std::{pin::Pin, ptr::NonNull, sync::{atomic::AtomicPtr, Arc, Mutex}};
+use std::{pin::Pin, sync::{atomic::AtomicPtr, Arc, Mutex}};
 
 use crate::{collector::Collector, for_each::ParallelForEach, for_each_mut::ParallelForEachMut, iterators::iterator::AtomicIterator, map::ParallelMap, task_queue::TaskQueue};
 
@@ -19,14 +19,13 @@ impl WorkerThreads
     {
         let mut vec_handles = Vec::new();   
         let arc_mut_task: Arc<AtomicPtr<TaskQueue<I, V>>> = Arc::new(AtomicPtr::new(Box::into_raw(Box::new(task.iter))));        
-        let func = unsafe {*Box::from_raw(Pin::get_unchecked_mut(task.f.as_mut())) };
-        // let non_null_func = NonNull::new(func);
+        let func = unsafe {*Box::from_raw(Pin::get_unchecked_mut(task.f.as_mut())) };        
         let arc_func = Arc::new(func);
         for _ in 0..self.nthreads {
             let builder = std::thread::Builder::new();            
             unsafe {  
                 let arc_mut_task_clone = arc_mut_task.clone();
-                let arc_func_clone = Arc::clone(&arc_func);
+                let arc_func_clone = Arc::clone(&arc_func);                
                 let result = builder.spawn_unchecked(move || 
                     {
                         Self::for_each_loop(arc_mut_task_clone,arc_func_clone )
@@ -73,20 +72,21 @@ impl WorkerThreads
 
     pub fn collect<I,F,T,V,C>(self, mut task:ParallelMap<V,F,T,I>) -> C
     where I:AtomicIterator<AtomicItem = V> + Send + Sized,
-    F: Fn(V) -> T + Send,
+    F: Fn(V) -> T + Send + Sync,
     V: Send,
     T:Send,
     C: Collector<T> {
         let mut vec_handles = Vec::new();                        
         let arc_mut_task: Arc<AtomicPtr<TaskQueue<I, V>>> = Arc::new(AtomicPtr::new(Box::into_raw(Box::new(task.iter))));        
-        
+        let func = unsafe {*Box::from_raw(Pin::get_unchecked_mut(task.f.as_mut())) };
+        let arc_func = Arc::new(func);
         for _ in 0..self.nthreads {
-            let builder = std::thread::Builder::new();            
+            let builder = std::thread::Builder::new();                  
             let result: Result<std::thread::JoinHandle<Vec<T>>, std::io::Error> = unsafe {  
                 let arc_mut_task_clone = arc_mut_task.clone();
-                let arc_func_clone = *Box::from_raw(Pin::get_unchecked_mut(task.f.as_mut()));
+                let arc_func_clone = Arc::clone(&arc_func);
                 builder.spawn_unchecked(move ||{Self::task_loop(arc_mut_task_clone, arc_func_clone)})                
-            };         
+            };                     
             vec_handles.push(result);
         }
 
@@ -104,7 +104,7 @@ impl WorkerThreads
     /// Task Loop runs the functions within each spawned thread. The Loop runs till the thread is able 
     /// to pop a value from the Iterator. Once there are no more values from the iterator, the loop breaks and
     /// the thread returns all values obtained till that point
-    fn task_loop<I,F,T,V>(task:Arc<AtomicPtr<TaskQueue<I, V>>>, f:F) -> Vec<T> 
+    fn task_loop<I,F,T,V>(task:Arc<AtomicPtr<TaskQueue<I, V>>>, f:Arc<F>) -> Vec<T> 
     where I:AtomicIterator<AtomicItem = V> + Send + Sized,
     F: Fn(V) -> T + Send,
     V: Send,
@@ -126,9 +126,9 @@ impl WorkerThreads
             // waiting_time += tm.elapsed().as_micros();
             val
         } 
-        {           
+        {                    
             let result = f(input);                         
-            res.push(result);                     
+            res.push(result);                              
         }                
         // tot_time = ttm.elapsed().as_micros();
         // println!("ID: {:?} -> total time = {} micros, waiting time = {} micros",threadid, tot_time, waiting_time);

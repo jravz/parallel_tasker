@@ -20,7 +20,7 @@ use super::collector::*;
 /// 
 pub trait ParallelMapIter<I, V,F,T>
 where Self: AtomicIterator<AtomicItem = V> + Send + Sized,
-F: Fn(V) -> T + Send,
+F: Fn(V) -> T + Send + Sync,
 V: Send,
 T:Send 
 {
@@ -31,13 +31,13 @@ T:Send
 
 impl<I,V,F,T> ParallelMapIter<I, V,F,T> for I 
 where I: AtomicIterator<AtomicItem = V> + Send + Sized,
-F: Fn(V) -> T + Send,
+F: Fn(V) -> T + Send + Sync,
 V: Send,
 T:Send {}
 
 pub struct ParallelMap<V,F,T,I>
 where I: AtomicIterator<AtomicItem = V> + Send + Sized,
-F: Fn(V) -> T + Send,
+F: Fn(V) -> T + Send + Sync,
 V: Send,
 T:Send 
 {
@@ -61,7 +61,7 @@ T:Send
 #[allow(dead_code)]
 impl<I,V,F,T> ParallelMap<V,F,T,I>
 where I:AtomicIterator<AtomicItem = V> + Send + Sized,
-F: Fn(V) -> T + Send,
+F: Fn(V) -> T + Send + Sync,
 V: Send,
 T:Send
 {

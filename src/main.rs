@@ -1,7 +1,7 @@
-
 use parallel_task::prelude::*;
 
 fn main() {
+   
     // Map being tested....
     println!("Map Samples");
     //Samples with both parallel_iter and into_parallel_iter options below    

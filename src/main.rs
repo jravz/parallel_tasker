@@ -1,7 +1,30 @@
 use parallel_task::prelude::*;
 
 fn main() {
-   
+
+    // Test out the AtomicIterator for parallel management of Vectors without risk of overlaps
+    let values = (0..100).map(|x|x).collect::<Vec<_>>();
+
+    std::thread::scope(|s| 
+        {
+            let shared_vec = values.into_parallel_iter().as_arc();
+            let share_clone = shared_vec.clone();
+            s.spawn(move || {
+                let tid = std::thread::current().id();
+                while let Some(val) = shared_vec.next(){
+                    print!(" [{:?}: {}] ",tid,val);
+                }
+            });
+
+            s.spawn(move || {
+                let tid = std::thread::current().id();
+                while let Some(val) = share_clone.next(){
+                    print!(" [{:?}: {}] ",tid,val);
+                }
+            });
+
+        }
+    );
     // Map being tested....
     println!("Map Samples");
     //Samples with both parallel_iter and into_parallel_iter options below    

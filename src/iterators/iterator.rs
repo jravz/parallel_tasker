@@ -5,7 +5,7 @@
 //! it ensures that each thread does not get the same value as another thread. Allowing threads to
 //! access values in the Collection in a mutually exclusive manner.
 
-use std::sync::atomic::AtomicUsize;
+use std::sync::{atomic::{AtomicPtr, AtomicUsize}, Arc};
 
 use crate::iterators::fetch::Fetch;
 
@@ -67,6 +67,14 @@ impl<T:Fetch> ParallelIter for T
 pub trait AtomicIterator {
     type AtomicItem;
     fn atomic_next(&mut self) -> Option<Self::AtomicItem>;
+
+    /// create a shareable iterator for safe access across threads without
+    /// any overlaps
+    fn as_arc(self) -> Arc<ShareableAtomicIter<Self>> 
+    where Self:Sized
+    {
+        Arc::new(ShareableAtomicIter::new(self))
+    }
 }
 
 impl<'a,T:Fetch> AtomicIterator for ParallelIterator<'a,T> {
@@ -95,3 +103,62 @@ impl<T:Fetch> AtomicIterator for IntoParallelIterator<T> {
     }
 }
 
+
+/// ShareableAtomicIter enables Vec and HashMap that implement the 
+/// Fetch trait to easily distributed across threads. Values can be safely
+/// accessed without any risk of overlaps. Thus allowing you to design how you 
+/// wish to process these collections across your threads
+/// ```
+/// use parallel_task::prelude::*;
+/// 
+/// // Test out the AtomicIterator for parallel management of Vectors without risk of overlaps
+///    let values = (0..100).map(|x|x).collect::<Vec<_>>();
+
+///    std::thread::scope(|s| 
+///    {
+///      let shared_vec = values.into_parallel_iter().as_arc();
+///      let share_clone = shared_vec.clone();
+///      s.spawn(move || {
+///         let tid = std::thread::current().id();
+///         while let Some(val) = shared_vec.next(){
+///             print!(" [{:?}: {}] ",tid,val);
+///         }
+///         });
+
+///      s.spawn(move || {
+///         let tid = std::thread::current().id();
+///         while let Some(val) = share_clone.next(){
+///             print!(" [{:?}: {}] ",tid,val);
+///         }
+///         });
+
+///      }
+/// );
+/// ```
+pub struct ShareableAtomicIter<T> 
+where T: AtomicIterator
+{
+    ptr: AtomicPtr<T>
+}
+
+impl<T> ShareableAtomicIter<T> 
+where T: AtomicIterator {
+
+    pub fn new(val:T) -> Self {
+
+        let ptr = Box::into_raw(Box::new(val));
+
+        ShareableAtomicIter {
+            ptr: AtomicPtr::new(ptr)
+        }
+    }
+
+    pub fn next(&self) -> Option<<T as AtomicIterator>::AtomicItem> {
+        unsafe {
+            if let Some(mutable) = self.ptr.load(std::sync::atomic::Ordering::Acquire).as_mut() {
+                return mutable.atomic_next();
+            };
+        }        
+        None
+    }
+}

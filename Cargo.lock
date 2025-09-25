@@ -162,7 +162,7 @@ dependencies = [
 
 [[package]]
 name = "parallel_task"
-version = "0.2.25"
+version = "0.3.0"
 dependencies = [
  "rand",
  "rayon",

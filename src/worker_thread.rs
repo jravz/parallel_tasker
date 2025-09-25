@@ -3,7 +3,7 @@
 //! there are Items to pull from the AtomicIterator. Whenever a thread becomes free it pulls a new Item
 //! and runs the closure function on the same
 
-use std::{pin::Pin, sync::{atomic::AtomicPtr, Arc, Mutex}};
+use std::{pin::Pin, ptr::NonNull, sync::{atomic::AtomicPtr, Arc, Mutex}};
 
 use crate::{collector::Collector, for_each::ParallelForEach, for_each_mut::ParallelForEachMut, iterators::iterator::AtomicIterator, map::ParallelMap, task_queue::TaskQueue};
 
@@ -14,20 +14,30 @@ impl WorkerThreads
 {
     pub fn run<I,F,V>(self, mut task:ParallelForEach<V,F,I>)
     where I:AtomicIterator<AtomicItem = V> + Send + Sized,
-    F: Fn(V) + Send,
+    F: Fn(V) + Send + Sync,
     V: Send,    
     {
+        let mut vec_handles = Vec::new();   
         let arc_mut_task: Arc<AtomicPtr<TaskQueue<I, V>>> = Arc::new(AtomicPtr::new(Box::into_raw(Box::new(task.iter))));        
+        let func = unsafe {*Box::from_raw(Pin::get_unchecked_mut(task.f.as_mut())) };
+        // let non_null_func = NonNull::new(func);
+        let arc_func = Arc::new(func);
         for _ in 0..self.nthreads {
             let builder = std::thread::Builder::new();            
             unsafe {  
                 let arc_mut_task_clone = arc_mut_task.clone();
-                let arc_func_clone = *Box::from_raw(Pin::get_unchecked_mut(task.f.as_mut()));
-                let _ = builder.spawn_unchecked(move || 
+                let arc_func_clone = Arc::clone(&arc_func);
+                let result = builder.spawn_unchecked(move || 
                     {
-                        Self::for_each_loop(arc_mut_task_clone, arc_func_clone)
-                });                
+                        Self::for_each_loop(arc_mut_task_clone,arc_func_clone )
+                });   
+                vec_handles.push(result);                 
             };                     
+        }
+
+        // allow all threads to finish
+        for handle in vec_handles {           
+            let _ =  handle.unwrap().join().unwrap();            
         }
 
     }
@@ -37,6 +47,7 @@ impl WorkerThreads
     F: FnMut(V) + Send,
     V: Send,    
     {
+        let mut vec_handles = Vec::new();   
         let arc_mut_task: Arc<AtomicPtr<TaskQueue<I, V>>> = Arc::new(AtomicPtr::new(Box::into_raw(Box::new(task.iter))));     
         let fclosure = task.f;
         let arc_mut_f = Arc::new(Mutex::new(fclosure));   
@@ -45,11 +56,17 @@ impl WorkerThreads
             unsafe {  
                 let arc_mut_task_clone = arc_mut_task.clone();
                 let arc_mut_f_clone =  arc_mut_f.clone();              
-                let _ = builder.spawn_unchecked(move || 
+                let result = builder.spawn_unchecked(move || 
                     {
                         Self::for_each_mut_loop(arc_mut_task_clone, arc_mut_f_clone)
-                });                
+                });
+                vec_handles.push(result);                
             };                     
+        }
+
+        // allow all threads to finish
+        for handle in vec_handles {           
+            let _ =  handle.unwrap().join().unwrap();            
         }
 
     }
@@ -121,7 +138,7 @@ impl WorkerThreads
     /// Task Loop runs the functions within each spawned thread. The Loop runs till the thread is able 
     /// to pop a value from the Iterator. Once there are no more values from the iterator, the loop breaks and
     /// the thread returns all values obtained till that point
-    fn for_each_loop<I,F,V>(task:Arc<AtomicPtr<TaskQueue<I,V>>>, f:F)
+    fn for_each_loop<I,F,V>(task:Arc<AtomicPtr<TaskQueue<I,V>>>, f:Arc<F>)
     where I:AtomicIterator<AtomicItem = V> + Send + Sized,
     F: Fn(V),
     V: Send,    
@@ -141,7 +158,7 @@ impl WorkerThreads
             // waiting_time += tm.elapsed().as_micros();
             val
         } 
-        {           
+        {                                           
             f(input);                                                       
         }                
         // tot_time = ttm.elapsed().as_micros();

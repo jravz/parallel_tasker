@@ -1,4 +1,5 @@
-use parallel_task::{for_each_mut::ParallelForEachMutIter, prelude::*};
+
+use parallel_task::prelude::*;
 
 fn main() {
     // Map being tested....

@@ -28,6 +28,7 @@ where I: Iterator<Item = T>
         }
 
         let pos = index % self.size;
+        
 
     }
 

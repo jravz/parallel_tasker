@@ -13,9 +13,9 @@ fn main() {
     //Lets create a scope to run the two threads in parallel
     std::thread::scope(|s| 
         {
-            // use parallel_iter to share by reference and into_parallel_iter to consume the values
-            // Apply '.as_arc()' to get a ShareableAtomicIter within an Arc
+            // use parallel_iter to share by reference and into_parallel_iter to consume the values            
             let parallel_iter: parallel_task::iterators::prelude::ParallelIterator<'_, Vec<i32>> = values.parallel_iter();
+            // Apply '.shareable()' to get a ShareableAtomicIter within an Arc
             let shared_vec: Arc<ShareableAtomicIter<ParallelIterator<'_, Vec<i32>>>> = parallel_iter.shareable();
             //Get a clone for the second thread
             let share_clone: Arc<ShareableAtomicIter<ParallelIterator<'_, Vec<i32>>>> = shared_vec.clone();

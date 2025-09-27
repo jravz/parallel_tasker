@@ -16,19 +16,19 @@ where I: Iterator<Item = T>
 /// AtomicQueuedValues allow parallel access across values within an iterator. It returns None when there are
 /// no more values to access
 /// ```
-/// use parallel_task::iterators::queued::QueuedValues;
+/// use parallel_task::iterators::queued::AtomicQueuedValues;
 /// let mut vec = (0..1000).collect::<Vec<_>>();
 /// let vec_iter = vec.into_iter();
-/// let mut queue = AtomicQueuedValues::new(vec_iter, 10);
+/// let mut queue = AtomicQueuedValues::new(vec_iter);
 /// assert_eq!(queue.pop(), Some(9));
 /// assert_eq!(queue.pop(), Some(8));
 /// ```
 /// ```
 /// // Testing ability to return None when there are no more elements.
-/// use parallel_task::iterators::queued::QueuedValues;
+/// use parallel_task::iterators::queued::AtomicQueuedValues;
 /// let mut vec = vec![1];
 /// let vec_iter = vec.into_iter();
-/// let mut queue = AtomicQueuedValues::new(vec_iter, 10);
+/// let mut queue = AtomicQueuedValues::new(vec_iter);
 /// assert_eq!(queue.pop(), Some(1));
 /// assert_eq!(queue.pop(),None);
 /// assert_eq!(queue.pop(),None);
@@ -67,6 +67,16 @@ where I: Iterator<Item = T>
         }
     }
 
+    /// Pop function retrieves a value within Some if there are values still to be retrieved.
+    /// Else it returns a None
+    /// ```
+    /// use parallel_task::iterators::queued::AtomicQueuedValues;
+    /// let mut vec = (0..1000).collect::<Vec<_>>();
+    /// let vec_iter = vec.into_iter();
+    /// let mut queue = AtomicQueuedValues::new(vec_iter);
+    /// assert_eq!(queue.pop(), Some(9));
+    /// assert_eq!(queue.pop(), Some(8));
+    /// ```
     pub fn pop(&mut self) -> Option<T> {       
 
         let index = self.ctr.fetch_sub(1isize, std::sync::atomic::Ordering::Acquire);

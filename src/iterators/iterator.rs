@@ -5,54 +5,90 @@
 //! it ensures that each thread does not get the same value as another thread. Allowing threads to
 //! access values in the Collection in a mutually exclusive manner.
 
-use std::sync::{atomic::{AtomicPtr, AtomicUsize}, Arc};
+use std::{collections::HashMap, sync::{atomic::AtomicPtr, Arc}};
 
-use crate::iterators::fetch::Fetch;
+use crate::iterators::queued::AtomicQueuedValues;
 
 #[allow(dead_code)]
-pub trait ParallelIter:Fetch
+pub trait ParallelIter<'data,T>
 where Self:Sized,
-{       
-    fn parallel_iter(&self) -> ParallelIterator<'_,Self>;
-    fn into_parallel_iter(self) -> IntoParallelIterator<Self>; 
+{    
+    type RefItem;
+    type RefIterator: Iterator<Item = Self::RefItem>;    
+    fn parallel_iter(&'data self) -> ParallelIterator<Self::RefIterator,Self::RefItem>;    
+}
+
+pub trait IntoParallelIter<'data,T>
+where Self:Sized,
+{    
+    type IntoItem;    
+    type IntoIterator: Iterator<Item = Self::IntoItem>;    
+    fn into_parallel_iter(self) -> ParallelIterator<Self::IntoIterator,Self::IntoItem>; 
 }
 
 /// ParallelIterator is comparable to Iter, but is set up for the AtomicIterator.
-/// Collection keys are only stored in the case of types like HashMap where the keys collection
-/// is used to establish a unique 1 to 1 relationship with a usize value from atomic_counter.
-pub struct ParallelIterator<'a, T:Fetch + 'a> 
+pub struct ParallelIterator<I, T> 
+where I: Iterator<Item = T>
 {
-    item: &'a T,
-    atomic_counter:AtomicUsize,
-    collection_keys:Vec<<T as Fetch>::FetchKey>
+    pub iter: AtomicQueuedValues<I,T>,    
 }
 
-/// IntoParallelIterator is comparable to IntoIter, but is set up for the AtomicIterator.
-/// Collection keys are only stored in the case of types like HashMap where the keys collection
-/// is used to establish a unique 1 to 1 relationship with a usize value from atomic_counter.
-pub struct IntoParallelIterator<T:Fetch> {
-    item: T,
-    atomic_counter:AtomicUsize,    
-    collection_keys:Vec<<T as Fetch>::FetchKey>
-}
 
-/// Blanket implementation for all T that implement Fetch
-impl<T:Fetch> ParallelIter for T
-{        
-    fn parallel_iter(&self) -> ParallelIterator<'_, T> {         
+/// Implementation for all Vectors
+impl<'data, T> ParallelIter<'data, T> for Vec<T>
+where Self: 'data
+{
+    type RefItem = &'data T;
+    type RefIterator = std::slice::Iter<'data,T>;       
+    fn parallel_iter(&'data self) -> ParallelIterator<Self::RefIterator, Self::RefItem>   
+    {       
+        let input = self.iter();  
         ParallelIterator {
-            item: self,
-            atomic_counter: AtomicUsize::new(0),
-            collection_keys: <T as Fetch>::keys_vec(self)
+            iter: AtomicQueuedValues::new_with_size(input, 100)
         }
-     }      
+     }       
+}
+
+/// Implementation for all Vectors
+impl<'data, T> IntoParallelIter<'data, T> for Vec<T>
+where Self: 'data
+{
+    type IntoItem = T;
+    type IntoIterator = std::vec::IntoIter<T>;      
     
-    fn into_parallel_iter(self) -> IntoParallelIterator<Self> {
-        let collection_keys:Vec<<T as Fetch>::FetchKey> = <T as Fetch>::keys_vec(&self);
-        IntoParallelIterator {
-            item: self,
-            atomic_counter: AtomicUsize::new(0),
-            collection_keys
+    fn into_parallel_iter(self) -> ParallelIterator<Self::IntoIterator, Self::IntoItem> {
+        let input = self.into_iter();  
+        ParallelIterator {
+            iter: AtomicQueuedValues::new_with_size(input, 100)
+        }
+    }       
+}
+
+/// Implementation for all HashMap
+impl<'data, K,V> ParallelIter<'data, (K,V)> for HashMap<K,V>
+where Self: 'data
+{
+    type RefItem = (&'data K, &'data V);
+    type RefIterator = std::collections::hash_map::Iter<'data,K, V>;       
+    fn parallel_iter(&'data self) -> ParallelIterator<Self::RefIterator, Self::RefItem>   
+    {       
+        let input = self.iter();  
+        ParallelIterator {
+            iter: AtomicQueuedValues::new(input)
+        }
+     }          
+}
+
+impl<'data, K,V> IntoParallelIter<'data, (K,V)> for HashMap<K,V>
+where Self: 'data
+{
+    type IntoItem = (K,V);
+    type IntoIterator = std::collections::hash_map::IntoIter<K,V>;  
+    
+    fn into_parallel_iter(self) -> ParallelIterator<Self::IntoIterator, Self::IntoItem> {
+        let input = self.into_iter();  
+        ParallelIterator {
+            iter: AtomicQueuedValues::new(input)
         }
     }       
 }
@@ -77,32 +113,15 @@ pub trait AtomicIterator {
     }
 }
 
-impl<'a,T:Fetch> AtomicIterator for ParallelIterator<'a,T> {
-    type AtomicItem = <T as Fetch>::FetchRefItem<'a>;
-    fn atomic_next(&mut self) -> Option<Self::AtomicItem> {
-        let index = self.atomic_counter.fetch_add(1, std::sync::atomic::Ordering::Acquire);        
-        let key = <T as Fetch>::get_key(&self.collection_keys, &index);
-        if let Some(key) = key {
-            self.item.atomic_get(key)
-        } else {
-            None
-        }
+impl<I,T> AtomicIterator for ParallelIterator<I,T> 
+where I: Iterator<Item = T>
+{    
+    type AtomicItem = T;
+    fn atomic_next(&mut self) -> Option<T> {
+        let val = self.iter.pop();        
+        val
     }
 }
-
-impl<T:Fetch> AtomicIterator for IntoParallelIterator<T> {
-    type AtomicItem = <T as Fetch>::FetchedItem;
-    fn atomic_next(&mut self) -> Option<Self::AtomicItem> {
-        let index = self.atomic_counter.fetch_add(1, std::sync::atomic::Ordering::Acquire);
-        let key = <T as Fetch>::get_key(&self.collection_keys, &index);
-        if let Some(key) = key {
-            self.item.atomic_fetch(key)
-        } else {
-            None
-        }
-    }
-}
-
 
 /// ShareableAtomicIter enables Vec and HashMap that implement the 
 /// Fetch trait to easily distributed across threads. Values can be safely

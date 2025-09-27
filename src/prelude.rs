@@ -2,7 +2,7 @@
 //! functionalities.
 //! 
 
-pub use crate::iterators::prelude::{AtomicIterator,Fetch,ParallelIter};
+pub use crate::iterators::prelude::{AtomicIterator,Fetch,ParallelIter,IntoParallelIter};
 pub use crate::{
     map::ParallelMapIter,
     for_each::ParallelForEachIter,

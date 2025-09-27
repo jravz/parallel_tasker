@@ -1,6 +1,5 @@
 use parallel_task::prelude::*;
-use std::sync::Arc;
-use parallel_task::iterators::prelude::{ShareableAtomicIter, ParallelIter, ParallelIterator,AtomicIterator};
+// use parallel_task::iterators::prelude::{ShareableAtomicIter, ParallelIter, ParallelIterator,AtomicIterator};
 
 fn main() {
 
@@ -14,11 +13,11 @@ fn main() {
     std::thread::scope(|s| 
         {
             // use parallel_iter to share by reference and into_parallel_iter to consume the values            
-            let parallel_iter: parallel_task::iterators::prelude::ParallelIterator<'_, Vec<i32>> = values.parallel_iter();
+            let parallel_iter = values.parallel_iter();
             // Apply '.shareable()' to get a ShareableAtomicIter within an Arc
-            let shared_vec: Arc<ShareableAtomicIter<ParallelIterator<'_, Vec<i32>>>> = parallel_iter.shareable();
+            let shared_vec = parallel_iter.shareable();
             //Get a clone for the second thread
-            let share_clone: Arc<ShareableAtomicIter<ParallelIterator<'_, Vec<i32>>>> = shared_vec.clone();
+            let share_clone = shared_vec.clone();
             
             // Lets spawn the first thread
             s.spawn(move || {
@@ -59,7 +58,7 @@ fn main() {
     res2.parallel_iter()
     .for_each(|val| { print!("{} ",*val);});
 
-    //testing mutability of for_each_mut
+    // testing mutability of for_each_mut
     println!("For Each Mut test");
     let mut test = 0;
     let target = 100;

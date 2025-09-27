@@ -44,7 +44,7 @@ where Self: 'data
     {       
         let input = self.iter();  
         ParallelIterator {
-            iter: AtomicQueuedValues::new_with_size(input, 100)
+            iter: AtomicQueuedValues::new_with_size(input, 1000)
         }
      }       
 }
@@ -59,7 +59,7 @@ where Self: 'data
     fn into_parallel_iter(self) -> ParallelIterator<Self::IntoIterator, Self::IntoItem> {
         let input = self.into_iter();  
         ParallelIterator {
-            iter: AtomicQueuedValues::new_with_size(input, 100)
+            iter: AtomicQueuedValues::new_with_size(input, 1000)
         }
     }       
 }
@@ -74,7 +74,7 @@ where Self: 'data
     {       
         let input = self.iter();  
         ParallelIterator {
-            iter: AtomicQueuedValues::new(input)
+            iter: AtomicQueuedValues::new_with_size(input, 1000)
         }
      }          
 }
@@ -88,7 +88,7 @@ where Self: 'data
     fn into_parallel_iter(self) -> ParallelIterator<Self::IntoIterator, Self::IntoItem> {
         let input = self.into_iter();  
         ParallelIterator {
-            iter: AtomicQueuedValues::new(input)
+            iter: AtomicQueuedValues::new_with_size(input, 1000)
         }
     }       
 }

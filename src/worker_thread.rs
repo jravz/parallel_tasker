@@ -12,6 +12,18 @@ pub struct WorkerThreads {pub nthreads:usize }
 #[allow(dead_code)]
 impl WorkerThreads
 {
+
+    fn is_queue_active<I,V>(queue:&Arc<AtomicPtr<TaskQueue<I, V>>>) -> bool 
+    where I:AtomicIterator<AtomicItem = V> + Send + Sized,
+    V: Send
+    {
+        if let Some(task_mutex) = unsafe { queue.load(std::sync::atomic::Ordering::Acquire).as_mut()} {
+            task_mutex.iter.is_active()
+        } else {
+            false
+        }
+    }
+
     pub fn run<I,F,V>(self, mut task:ParallelForEach<V,F,I>)
     where I:AtomicIterator<AtomicItem = V> + Send + Sized,
     F: Fn(V) + Send + Sync,
@@ -22,9 +34,12 @@ impl WorkerThreads
         let func = unsafe {*Box::from_raw(Pin::get_unchecked_mut(task.f.as_mut())) };        
         let arc_func = Arc::new(func);
         for _ in 0..self.nthreads {
+            let arc_mut_task_clone = arc_mut_task.clone();
+            if !Self::is_queue_active(&arc_mut_task_clone) {
+                break;
+            }
             let builder = std::thread::Builder::new();            
-            unsafe {  
-                let arc_mut_task_clone = arc_mut_task.clone();
+            unsafe {                  
                 let arc_func_clone = Arc::clone(&arc_func);                
                 let result = builder.spawn_unchecked(move || 
                     {
@@ -51,9 +66,12 @@ impl WorkerThreads
         let fclosure = task.f;
         let arc_mut_f = Arc::new(Mutex::new(fclosure));   
         for _ in 0..self.nthreads {
+            let arc_mut_task_clone = arc_mut_task.clone();
+            if !Self::is_queue_active(&arc_mut_task_clone) {
+                break;
+            }
             let builder = std::thread::Builder::new();            
-            unsafe {  
-                let arc_mut_task_clone = arc_mut_task.clone();
+            unsafe {                  
                 let arc_mut_f_clone =  arc_mut_f.clone();              
                 let result = builder.spawn_unchecked(move || 
                     {
@@ -81,9 +99,12 @@ impl WorkerThreads
         let func = ManuallyDrop::new(unsafe {*Box::from_raw(Pin::get_unchecked_mut(task.f.as_mut())) });
         let arc_func: Arc<ManuallyDrop<F>> = Arc::new(func);
         for _ in 0..self.nthreads {
+            let arc_mut_task_clone = arc_mut_task.clone();
+            // if !Self::is_queue_active(&arc_mut_task_clone) {
+            //     break;
+            // }
             let builder = std::thread::Builder::new();                  
-            let result: Result<std::thread::JoinHandle<Vec<T>>, std::io::Error> = unsafe {  
-                let arc_mut_task_clone = arc_mut_task.clone();
+            let result: Result<std::thread::JoinHandle<Vec<T>>, std::io::Error> = unsafe {                  
                 let arc_func_clone = Arc::clone(&arc_func);
                 builder.spawn_unchecked(move ||{Self::task_loop(arc_mut_task_clone, arc_func_clone)})                
             };                     
@@ -97,9 +118,7 @@ impl WorkerThreads
         }
         drop(arc_func);
         output
-    }    
-
-    
+    }        
     
     
     /// Task Loop runs the functions within each spawned thread. The Loop runs till the thread is able 

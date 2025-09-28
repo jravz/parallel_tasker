@@ -10,7 +10,8 @@ where I: Iterator<Item = T>
     ctr:AtomicIsize,
     access:AtomicBool,
     picked_ctr:AtomicIsize,
-    pick_target:usize
+    pick_target:usize,
+    is_active:AtomicBool
 }
 
 /// AtomicQueuedValues allow parallel access across values within an iterator. It returns None when there are
@@ -50,7 +51,8 @@ where I: Iterator<Item = T>
             ctr: AtomicIsize::new(-1),
             access: AtomicBool::new(true),
             picked_ctr:AtomicIsize::new(0),
-            pick_target:0
+            pick_target:0,
+            is_active: AtomicBool::new(true)
         }
     }
 
@@ -63,8 +65,15 @@ where I: Iterator<Item = T>
             ctr: AtomicIsize::new(-1),
             access: AtomicBool::new(true),
             picked_ctr:AtomicIsize::new(0),
-            pick_target:0
+            pick_target:0,
+            is_active: AtomicBool::new(true)
         }
+    }
+
+    ///tests whether the iterator is still active with values still available
+    /// to be pulled
+    pub fn is_active(&self) -> bool {
+        self.is_active.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Pop function retrieves a value within Some if there are values still to be retrieved.
@@ -92,6 +101,8 @@ where I: Iterator<Item = T>
             }
 
             if self.queue.len() < 1 {
+                // Informs if this is still active and guides if any further threads need be launched
+                self.is_active.store(false, std::sync::atomic::Ordering::Relaxed);
                 return None;
             } else {
                 return self.pop()

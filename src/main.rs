@@ -66,4 +66,8 @@ fn main() {
     parallel_iter().for_each_mut(|v| { test += v;});
     println!("X = {}, Expected = {}",test, (target * (target + 1)/2));
 
+    // testing for Range<i32>
+    (0..100).into_parallel_iter()
+    .for_each(|v| print!("v:{} ",v));
+
 }

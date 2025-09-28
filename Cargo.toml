@@ -1,9 +1,9 @@
 [package]
 name = "parallel_task"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2024"
 authors = ["Jayanth Ravindran <jayanth.ravindran@gmail.com>"]
-description = "A super fast data parallelism library for Rust"
+description = "A fast data parallelism library for Rust"
 license = "MIT"
 repository = "https://github.com/jravz/parallel_tasker"
 keywords = ["concurrency", "cpu", "parallelism", "thread", "multi-thread"]

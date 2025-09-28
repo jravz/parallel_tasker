@@ -59,8 +59,7 @@ where Self: 'data
     type IntoIterator = std::collections::hash_map::IntoIter<K,V>;  
     
     fn into_parallel_iter(self) -> ParallelIterator<Self::IntoIterator, Self::IntoItem> {
-        let input = self.into_iter();  
-        let x = (0..100);
+        let input = self.into_iter();          
         ParallelIterator {
             iter: AtomicQueuedValues::new_with_size(input, 1000)
         }

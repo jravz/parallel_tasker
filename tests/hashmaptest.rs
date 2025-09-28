@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use tokio::time::Duration;
 use rayon::prelude::*;
-use parallel_task::prelude::{ParallelIter,ParallelMapIter};
+use parallel_task::prelude::{ParallelIter,ParallelMapIter,IntoParallelIter};
 
 #[test]
 fn hashmap_test() {   
@@ -10,7 +10,7 @@ fn hashmap_test() {
         (0..1_000).sum::<i32>()
     };
 
-    let hashmap_jobs = (0..100_000).map(|i|(i,job)).collect::<HashMap<_,_>>();
+    let hashmap_jobs = (0..100_00).map(|i|(i,job)).collect::<HashMap<_,_>>();
 
     let tm = std::time::Instant::now();
     let _ = hashmap_jobs.parallel_iter().

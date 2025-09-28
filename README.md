@@ -1,9 +1,9 @@
 # Parallel Task Crate
-A super fast data parallelism library using Atomics to share data across threads and uniquely pull values from Collections such as Vec or HashMap. It follows a 'pull' approach and tries to reduce the time required for the thread to pick the next value. The key question was can the time taken by thread to get the next job be kept minimal.
-This is achieved by using an AtomicIterator that generates a mutually exclusive usize value for each thread that corresponds to a unique stored value in the Collection. 
-Hence, all types that implement the Fetch Trait (Vec and HashMap) can be consumed or passed by reference to run Map or ForEach functions on the same.
+A fast data parallelism library using Atomics to share data across threads and uniquely pull values from Collections such as Vec, HashMap, Range. It leverages a 'pull' approach and uses a concept of AtomicQueuedValues to reduce the time required for the thread to pick the next value. 
+This is achieved by queueing values in advance and allowing each thread to access a unique value within the queue based on an AtomicIsize value, that corresponds to a unique stored value in the Collection. 
+Hence, all types that implement the ParallelIter or IntoParallelIter Trait (Vec, HashMap and Range) can be consumed or passed by reference to run Map or ForEach functions on the same.
 
-The results show comparable performance to the popular Rayon library and in a number of cases improved performance as well. No study has been done to establish whether the results are significant.
+The results show good performance to the popular Rayon library.
 
 Please try at your end and share your feedback at jayanth.ravindran@gmail.com.
 
@@ -37,28 +37,38 @@ ShareableAtomicIter enables Vec and HashMap that implement the Fetch trait to ea
 ```
 use parallel_task::prelude::*;
 
-// Test out the AtomicIterator for parallel management of Vectors without risk of overlaps
-   let values = (0..100).map(|x|x).collect::<Vec<_>>();
+// Lets create a simple vector of 100 values that we wish to share across 
+    // two threads
+    let values = (0..100).collect::<Vec<_>>();
 
-   std::thread::scope(|s| 
-   {
-     let shared_vec = values.into_parallel_iter().shareable();
-     let share_clone = shared_vec.clone();
-     s.spawn(move || {
-        let tid = std::thread::current().id();
-        while let Some(val) = shared_vec.next(){
-            print!(" [{:?}: {}] ",tid,val);
+    //Lets create a scope to run the two threads in parallel
+    std::thread::scope(|s| 
+        {
+            // use parallel_iter to share by reference and into_parallel_iter to consume the values            
+            let parallel_iter = values.parallel_iter();
+            // Apply '.shareable()' to get a ShareableAtomicIter within an Arc
+            let shared_vec = parallel_iter.shareable();
+            //Get a clone for the second thread
+            let share_clone = shared_vec.clone();
+            
+            // Lets spawn the first thread
+            s.spawn(move || {
+                let tid = std::thread::current().id();
+                //Just do .next() and get unique values without overlap with other threads
+                while let Some(val) = shared_vec.next(){
+                    print!(" [{:?}: {}] ",tid,val);
+                }
+            });
+
+            // Lets spawn the second thread
+            s.spawn(move || {
+                let tid = std::thread::current().id();
+                while let Some(val) = share_clone.next(){
+                    print!(" [{:?}: {}] ",tid,val);
+                }
+            });
+
         }
-        });
-
-     s.spawn(move || {
-        let tid = std::thread::current().id();
-        while let Some(val) = share_clone.next(){
-            print!(" [{:?}: {}] ",tid,val);
-        }
-        });
-
-      }
-);
+    );
 ```
 

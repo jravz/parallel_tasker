@@ -1,14 +1,14 @@
-//! AtomicIterator is a trait implementd on ParallelIterator and IntoParallelIterator which are both
-//! available for types implementing the Fetch trait.
-//! AtomicIterator and Fetch traits together help in establishing a 1 to 1 relationship with a value
-//! stored in the Collection to a usize value. Further using a counter of AtomicUsize type which is indivisible
-//! it ensures that each thread does not get the same value as another thread. Allowing threads to
+//! AtomicIterator is a trait implementd on ParallelIterator and IntoParallelIterator that both employ 
+//! AtomicQueuedValues to manage exclusive access to values within Vec, HashMap that implement Iterator.
+//! AtomicQueuedValues uses Atomics to ensure that each thread does not get the same value as another thread. Allowing threads to
 //! access values in the Collection in a mutually exclusive manner.
 
 use std::sync::{atomic::AtomicPtr, Arc};
 
 use crate::iterators::queued::AtomicQueuedValues;
 
+/// ParallelIter gives a version of ParallelIterator that is expected to capture the .iter output
+/// for those that implement the same like Vec, HashMap and so on. 
 #[allow(dead_code)]
 pub trait ParallelIter<'data,T>
 where Self:Sized,
@@ -18,6 +18,9 @@ where Self:Sized,
     fn parallel_iter(&'data self) -> ParallelIterator<Self::RefIterator,Self::RefItem>;    
 }
 
+/// IntoParallelIter gives a version of ParallelIterator that is expected to capture the .into_iter output
+/// for those that implement the same like Vec, HashMap and so on. 
+#[allow(dead_code)]
 pub trait IntoParallelIter<'data,T>
 where Self:Sized,
 {    
@@ -34,13 +37,9 @@ where I: Iterator<Item = T>
 }
 
 
-/// AtomicIterator depends on the ability to create a 1 to 1 association with a usize value less than len and a stored
-/// value within the type.
-/// For instance in vec![1,2,3] a usize value of 1 would give 2. 
-/// In HashMap {(1,"A"), (2,"B"), (3,"B") } where collection of keys are [1,2,3], the usize 1 will be mapped to (2,"B") based on its
-/// position in the collection of keys.
-/// AtomicUsize and fetch_add function is used to ensure each thread gets an independent usize value that it may use to 
-/// fetch a unique value from the target pool.
+/// AtomicIterator trait is applied on the  ParallelIterator that has AtomicQueuedValues 
+/// due to which it is able to manage exclusive access for each thread for values within
+/// the implemented Collection type. 
 pub trait AtomicIterator {
     type AtomicItem;
     fn atomic_next(&mut self) -> Option<Self::AtomicItem>;

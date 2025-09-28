@@ -3,7 +3,7 @@
 //! there are Items to pull from the AtomicIterator. Whenever a thread becomes free it pulls a new Item
 //! and runs the closure function on the same
 
-use std::{cell::Cell, mem::ManuallyDrop, pin::Pin, sync::{atomic::AtomicPtr, Arc, Mutex}};
+use std::{mem::ManuallyDrop, pin::Pin, sync::{atomic::AtomicPtr, Arc, Mutex}};
 
 use crate::{collector::Collector, for_each::ParallelForEach, for_each_mut::ParallelForEachMut, iterators::iterator::AtomicIterator, map::ParallelMap, task_queue::TaskQueue};
 pub struct WorkerThreads {pub nthreads:usize }

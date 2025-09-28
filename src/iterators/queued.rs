@@ -1,4 +1,4 @@
-use std::{cell::Cell, collections::HashMap, mem::ManuallyDrop, sync::atomic::{AtomicBool, AtomicIsize}};
+use std::{cell::Cell, collections::HashMap, sync::atomic::{AtomicBool, AtomicIsize}};
 const ONE_SEC:usize = 1;
 #[allow(dead_code)]
 pub struct AtomicQueuedValues<I,T> 
@@ -36,8 +36,6 @@ thread_local!(static CURR_INDEX: Cell<isize> = const { Cell::new(-1) });
 /// assert_eq!(queue.pop(),None);
 /// assert_eq!(queue.pop(),None);
 /// ```
-/// 
-
 #[allow(dead_code)]
 impl<T,I> AtomicQueuedValues<I,T> 
 where I: Iterator<Item = T>
@@ -104,7 +102,7 @@ where I: Iterator<Item = T>
                 self.access.store(true, std::sync::atomic::Ordering::Release);
             } else {
                 let mut tm = std::time::Instant::now();
-                while self.access.load(std::sync::atomic::Ordering::Relaxed) == false
+                while !self.access.load(std::sync::atomic::Ordering::Relaxed)
                 {                     
                     if tm.elapsed().as_secs() > 2 {
                         println!("{:?} - loop 1: {} ||",std::thread::current().id(),CURR_INDEX.get());
@@ -112,11 +110,11 @@ where I: Iterator<Item = T>
                     }
                 }                
             }
-            return self.pop();                                
+            self.pop()                               
         } else {            
             let val:Option<T> = std::mem::take(&mut self.queue[CURR_INDEX.get() as usize]);    
             self.picked_ctr.fetch_add(1, std::sync::atomic::Ordering::SeqCst);                    
-            return val;
+            val
         }
         
 
@@ -130,7 +128,7 @@ where I: Iterator<Item = T>
         let tm = std::time::Instant::now();
         // ensure no one is still due to pick                  
         while (self.picked_ctr.load(std::sync::atomic::Ordering::Relaxed) < self.pick_target as isize)
-        && (self.queue.len() > 0)
+        && !self.queue.is_empty()
         {  
             // If this is taking more than a second then its some freak condition and no more threads are 
             // expected to be waiting for this to close.
@@ -141,7 +139,7 @@ where I: Iterator<Item = T>
 
         // If there are any missing they will first be picked        
         let mut new_vec = self.queue.iter_mut()
-        .filter(|val| val.is_some()).map(|val| std::mem::take(val)).collect::<Vec<_>>();
+        .filter(|val| val.is_some()).map(std::mem::take).collect::<Vec<_>>();
         
         let to_fill_size = self.size - new_vec.len();
         
@@ -152,7 +150,7 @@ where I: Iterator<Item = T>
         self.queue = new_vec;
         let to_pick = self.queue.len();
         self.ctr.store(to_pick as isize -1isize, std::sync::atomic::Ordering::Release);
-        self.picked_ctr.store(0 as isize, std::sync::atomic::Ordering::SeqCst);
+        self.picked_ctr.store(0, std::sync::atomic::Ordering::SeqCst);
         self.pick_target = to_pick;
     }
 }

@@ -62,8 +62,7 @@ where I: Iterator<Item = T>
 {    
     type AtomicItem = T;
     fn atomic_next(&mut self) -> Option<T> {
-        let val = self.iter.pop();        
-        val
+        self.iter.pop()               
     }
 
     fn is_active(&self) -> bool {

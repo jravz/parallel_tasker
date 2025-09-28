@@ -5,7 +5,7 @@
 //! it ensures that each thread does not get the same value as another thread. Allowing threads to
 //! access values in the Collection in a mutually exclusive manner.
 
-use std::{collections::HashMap, sync::{atomic::AtomicPtr, Arc}};
+use std::sync::{atomic::AtomicPtr, Arc};
 
 use crate::iterators::queued::AtomicQueuedValues;
 
@@ -34,67 +34,6 @@ where I: Iterator<Item = T>
 }
 
 
-/// Implementation for all Vectors
-impl<'data, T> ParallelIter<'data, T> for Vec<T>
-where Self: 'data
-{
-    type RefItem = &'data T;
-    type RefIterator = std::slice::Iter<'data,T>;       
-    fn parallel_iter(&'data self) -> ParallelIterator<Self::RefIterator, Self::RefItem>   
-    {       
-        let size = usize::max(self.len() / 10usize,100);
-        let input = self.iter();          
-        ParallelIterator {
-            iter: AtomicQueuedValues::new_with_size(input, size)
-        }
-     }       
-}
-
-/// Implementation for all Vectors
-impl<'data, T> IntoParallelIter<'data, T> for Vec<T>
-where Self: 'data
-{
-    type IntoItem = T;
-    type IntoIterator = std::vec::IntoIter<T>;      
-    
-    fn into_parallel_iter(self) -> ParallelIterator<Self::IntoIterator, Self::IntoItem> {
-        let size = usize::max(self.len() / 10usize,100);
-        let input = self.into_iter();  
-        ParallelIterator {
-            iter: AtomicQueuedValues::new_with_size(input, size)
-        }
-    }       
-}
-
-/// Implementation for all HashMap
-impl<'data, K,V> ParallelIter<'data, (K,V)> for HashMap<K,V>
-where Self: 'data
-{
-    type RefItem = (&'data K, &'data V);
-    type RefIterator = std::collections::hash_map::Iter<'data,K, V>;       
-    fn parallel_iter(&'data self) -> ParallelIterator<Self::RefIterator, Self::RefItem>   
-    {       
-        let input = self.iter();  
-        ParallelIterator {
-            iter: AtomicQueuedValues::new_with_size(input, 1000)
-        }
-     }          
-}
-
-impl<'data, K,V> IntoParallelIter<'data, (K,V)> for HashMap<K,V>
-where Self: 'data
-{
-    type IntoItem = (K,V);
-    type IntoIterator = std::collections::hash_map::IntoIter<K,V>;  
-    
-    fn into_parallel_iter(self) -> ParallelIterator<Self::IntoIterator, Self::IntoItem> {
-        let input = self.into_iter();  
-        ParallelIterator {
-            iter: AtomicQueuedValues::new_with_size(input, 1000)
-        }
-    }       
-}
-
 /// AtomicIterator depends on the ability to create a 1 to 1 association with a usize value less than len and a stored
 /// value within the type.
 /// For instance in vec![1,2,3] a usize value of 1 would give 2. 
@@ -113,6 +52,10 @@ pub trait AtomicIterator {
     {
         Arc::new(ShareableAtomicIter::new(self))
     }
+
+    ///tests whether the iterator is still active with values still available
+    /// to be pulled
+    fn is_active(&self) -> bool;
 }
 
 impl<I,T> AtomicIterator for ParallelIterator<I,T> 
@@ -122,6 +65,10 @@ where I: Iterator<Item = T>
     fn atomic_next(&mut self) -> Option<T> {
         let val = self.iter.pop();        
         val
+    }
+
+    fn is_active(&self) -> bool {
+        self.iter.is_active()
     }
 }
 

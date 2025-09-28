@@ -3,10 +3,9 @@
 //! there are Items to pull from the AtomicIterator. Whenever a thread becomes free it pulls a new Item
 //! and runs the closure function on the same
 
-use std::{mem::ManuallyDrop, pin::Pin, sync::{atomic::AtomicPtr, Arc, Mutex}};
+use std::{cell::Cell, mem::ManuallyDrop, pin::Pin, sync::{atomic::AtomicPtr, Arc, Mutex}};
 
 use crate::{collector::Collector, for_each::ParallelForEach, for_each_mut::ParallelForEachMut, iterators::iterator::AtomicIterator, map::ParallelMap, task_queue::TaskQueue};
-
 pub struct WorkerThreads {pub nthreads:usize }
 
 #[allow(dead_code)]
@@ -102,24 +101,35 @@ impl WorkerThreads
         let arc_func: Arc<ManuallyDrop<F>> = Arc::new(func);
         for _ in 0..self.nthreads {
             let arc_mut_task_clone = arc_mut_task.clone();
-            // if !Self::is_queue_active(&arc_mut_task_clone) {
-            //     break;
-            // }
+            
             let builder = std::thread::Builder::new();                  
             let result: Result<std::thread::JoinHandle<Vec<T>>, std::io::Error> = unsafe {                  
                 let arc_func_clone = Arc::clone(&arc_func);
                 builder.spawn_unchecked(move ||{Self::task_loop(arc_mut_task_clone, arc_func_clone)})                
-            };                     
+            };             
+
             vec_handles.push(result);
         }
         
         let mut output = C::initialize();
-        for handle in vec_handles {           
-            let res =  handle.unwrap().join().unwrap();        
-            output.extend(res.into_iter());
+        
+        for handle in vec_handles { 
+            if let Ok(handle_val) = handle {                
+                match handle_val.join() {
+                    Ok(res) => {
+                        output.extend(res.into_iter());
+                    }
+                    Err(e) => {
+                        let e = e.downcast_ref::<String>().unwrap();
+                        eprintln!("Error: {}",e);
+                    }
+                }            
+            } else {
+                eprintln!("Join Error in Map function of ParallelTask");
+            }                                    
         }
-        drop(arc_func);
-        drop(arc_mut_task);
+        // drop(arc_func);
+        // drop(arc_mut_task);
         output
     }        
     

@@ -42,9 +42,10 @@ where Self: 'data
     type RefIterator = std::slice::Iter<'data,T>;       
     fn parallel_iter(&'data self) -> ParallelIterator<Self::RefIterator, Self::RefItem>   
     {       
-        let input = self.iter();  
+        let size = usize::max(self.len() / 10usize,100);
+        let input = self.iter();          
         ParallelIterator {
-            iter: AtomicQueuedValues::new_with_size(input, 1000)
+            iter: AtomicQueuedValues::new_with_size(input, size)
         }
      }       
 }
@@ -57,9 +58,10 @@ where Self: 'data
     type IntoIterator = std::vec::IntoIter<T>;      
     
     fn into_parallel_iter(self) -> ParallelIterator<Self::IntoIterator, Self::IntoItem> {
+        let size = usize::max(self.len() / 10usize,100);
         let input = self.into_iter();  
         ParallelIterator {
-            iter: AtomicQueuedValues::new_with_size(input, 1000)
+            iter: AtomicQueuedValues::new_with_size(input, size)
         }
     }       
 }

@@ -38,6 +38,7 @@ impl WorkerThreads
         for handle in vec_handles {           
             handle.unwrap().join().unwrap();            
         }
+        drop(arc_mut_task);
 
     }
 
@@ -67,6 +68,7 @@ impl WorkerThreads
         for handle in vec_handles {           
             handle.unwrap().join().unwrap();            
         }
+        drop(arc_mut_task);
 
     }
 
@@ -96,6 +98,7 @@ impl WorkerThreads
             output.extend(res.into_iter());
         }
         drop(arc_func);
+        drop(arc_mut_task);
         output
     }    
 

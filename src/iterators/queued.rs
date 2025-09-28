@@ -43,7 +43,7 @@ where I: Iterator<Item = T>
 
     pub fn new(iter:I) -> Self {
         let queue:Vec<Option<T>> = Vec::new();
-        Self {
+        let mut obj = Self {
             size: Self::DEFAULT_SIZE,
             queue,
             iter,
@@ -51,12 +51,14 @@ where I: Iterator<Item = T>
             access: AtomicBool::new(true),
             picked_ctr:AtomicIsize::new(0),
             pick_target:0
-        }
+        };
+        obj.pull_in();
+        obj
     }
 
     pub fn new_with_size(iter:I,size:usize) -> Self {
         let queue:Vec<Option<T>> = Vec::new();
-        Self {
+        let mut obj = Self {
             size,
             queue,
             iter,
@@ -64,7 +66,9 @@ where I: Iterator<Item = T>
             access: AtomicBool::new(true),
             picked_ctr:AtomicIsize::new(0),
             pick_target:0
-        }
+        };
+        obj.pull_in();
+        obj
     }
 
     /// Pop function retrieves a value within Some if there are values still to be retrieved.
@@ -80,15 +84,15 @@ where I: Iterator<Item = T>
     pub fn pop(&mut self) -> Option<T> {       
 
         let index = self.ctr.fetch_sub(1isize, std::sync::atomic::Ordering::Acquire);
-
-        if index < 0 {
+        
+        if index < 0 {            
             if let Ok(true) = self.access.compare_exchange(true, false, std::sync::atomic::Ordering::Relaxed, std::sync::atomic::Ordering::Relaxed) 
             {
                 self.pull_in();
                 self.access.store(true, std::sync::atomic::Ordering::Release);
             } else {
                 while self.access.load(std::sync::atomic::Ordering::Relaxed) == false
-                {}
+                { }                
             }
 
             if self.queue.len() < 1 {
@@ -96,10 +100,9 @@ where I: Iterator<Item = T>
             } else {
                 return self.pop()
             }                        
-        } else {
-            // println!("{:?}:getting the value:",std::thread::current().id());
-            let val:Option<T> = std::mem::take(&mut self.queue[index as usize]);
-            self.picked_ctr.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        } else {            
+            let val:Option<T> = std::mem::take(&mut self.queue[index as usize]);    
+            self.picked_ctr.fetch_add(1, std::sync::atomic::Ordering::SeqCst);                    
             return val;
         }
         
@@ -111,8 +114,10 @@ where I: Iterator<Item = T>
     fn pull_in(&mut self)
     where I: Iterator<Item = T> {
 
-        // ensure no one is still due to pick
-        while self.picked_ctr.load(std::sync::atomic::Ordering::Relaxed) < self.pick_target as isize {}
+        // ensure no one is still due to pick                  
+        while (self.picked_ctr.load(std::sync::atomic::Ordering::Relaxed) < self.pick_target as isize)
+        && (self.queue.len() > 0)
+        {  }
 
         let mut new_vec = Vec::new();
         for _ in 0..self.size {

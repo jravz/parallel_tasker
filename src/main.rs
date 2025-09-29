@@ -2,7 +2,6 @@ use parallel_task::prelude::*;
 // use parallel_task::iterators::prelude::{ShareableAtomicIter, ParallelIter, ParallelIterator,AtomicIterator};
 
 fn main() {
-
     // Test out the AtomicIterator for parallel management of Vectors without risk of overlaps
     
     // Lets create a simple vector of 100 values that we wish to share across 

@@ -16,7 +16,7 @@ where Self: 'data
     fn parallel_iter(&'data self) -> ParallelIterator<Self::RefIterator, Self::RefItem>   
     {       
         let input = self.iter(); 
-        let size = self.len() / 1000usize; 
+        let size = usize::max(self.len() / 1000usize,100);  
         ParallelIterator {
             iter: AtomicQueuedValues::new_with_size(input, size)
         }
@@ -31,7 +31,7 @@ where Self: 'data
     type IntoIterator = std::vec::IntoIter<T>;      
     
     fn into_parallel_iter(self) -> ParallelIterator<Self::IntoIterator, Self::IntoItem> {
-        let size = self.len() / 1000usize;  
+        let size = usize::max(self.len() / 1000usize,100);  
         let input = self.into_iter();         
         ParallelIterator {
             iter: AtomicQueuedValues::new_with_size(input, size)

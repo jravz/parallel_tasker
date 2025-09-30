@@ -6,7 +6,6 @@ const DEFAULT_THREADS_NUM:usize = 1;
 const CPU_2_THREAD_RATIO:usize = 2;
 
 use std::marker::PhantomData;
-use std::pin::Pin;
 use crate::task_queue::TaskQueue;
 use crate::worker_thread::WorkerThreads;
 use super::iterators::iterator::AtomicIterator;
@@ -50,7 +49,7 @@ F: Fn(V) + Send + Sync,
 V: Send
 {
     pub iter: TaskQueue<I,V>,
-    pub f:Pin<Box<F>>,
+    pub f:F,
     pub num_threads:usize,
     pub v: PhantomData<V>,    
 }
@@ -65,7 +64,7 @@ V: Send,
     {                   
         Self {
             iter: TaskQueue { iter },
-            f:Box::pin(f),
+            f,
             num_threads: Self::max_threads(),
             v: PhantomData,            
         }

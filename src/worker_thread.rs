@@ -3,7 +3,7 @@
 //! there are Items to pull from the AtomicIterator. Whenever a thread becomes free it pulls a new Item
 //! and runs the closure function on the same
 
-use std::{mem::ManuallyDrop, pin::Pin, sync::{atomic::AtomicPtr, Arc, Mutex}};
+use std::{mem::ManuallyDrop,sync::{atomic::AtomicPtr, Arc, Mutex, RwLock}};
 
 use crate::{collector::Collector, for_each::ParallelForEach, for_each_mut::ParallelForEachMut, iterators::iterator::AtomicIterator, map::ParallelMap, task_queue::TaskQueue};
 pub struct WorkerThreads {pub nthreads:usize }
@@ -29,10 +29,9 @@ impl WorkerThreads
     V: Send,    
     {
         let mut vec_handles = Vec::new();           
-        let mut fnc = task.f;   
-        let arc_mut_task: Arc<ManuallyDrop<AtomicPtr<TaskQueue<I, V>>>> = Arc::new(ManuallyDrop::new(AtomicPtr::new(Box::into_raw(Box::new(task.iter)))));           
-        let func = ManuallyDrop::new(unsafe {*Box::from_raw(Pin::get_unchecked_mut(fnc.as_mut())) });
-        let arc_func: Arc<ManuallyDrop<F>> = Arc::new(func);
+        let fnc = task.f;   
+        let arc_mut_task: Arc<ManuallyDrop<AtomicPtr<TaskQueue<I, V>>>> = Arc::new(ManuallyDrop::new(AtomicPtr::new(Box::into_raw(Box::new(task.iter)))));                   
+        let arc_func: Arc<RwLock<F>> = Arc::new(RwLock::new(fnc));
         for _ in 0..self.nthreads {
             let arc_mut_task_clone = arc_mut_task.clone();
             if !Self::is_queue_active(&arc_mut_task_clone) {
@@ -54,12 +53,7 @@ impl WorkerThreads
             handle.unwrap().join().unwrap();            
         }
         
-        // drop all instances of manually drops
-        {
-            let inner = Arc::try_unwrap(arc_func).
-            map_err(|_|String::from("failed drop")).unwrap(); 
-            ManuallyDrop::<F>::into_inner(inner); 
-        }
+        // drop all instances of manually drops        
         {
             let inner = Arc::try_unwrap(arc_mut_task).unwrap(); 
             ManuallyDrop::into_inner(inner); 
@@ -104,12 +98,14 @@ impl WorkerThreads
     T:Send,
     C: Collector<T> {
         let mut vec_handles = Vec::new();     
-        let mut fnc = task.f;                   
+        let fnc = task.f;                           
         let arc_mut_task: Arc<ManuallyDrop<AtomicPtr<TaskQueue<I, V>>>> = Arc::new(ManuallyDrop::new(AtomicPtr::new(Box::into_raw(Box::new(task.iter)))));           
 
-        let func = ManuallyDrop::new(unsafe {*Box::from_raw(Pin::get_unchecked_mut(fnc.as_mut())) });
-        let arc_func: Arc<ManuallyDrop<F>> = Arc::new(func);
+        let arc_func: Arc<RwLock<F>> = Arc::new(RwLock::new(fnc));
         for _ in 0..(self.nthreads) {
+            // if Self::is_queue_active(&arc_mut_task) {
+            //     break;
+            // }
             let arc_mut_task_clone = arc_mut_task.clone();
             
             let builder = std::thread::Builder::new();                  
@@ -138,13 +134,7 @@ impl WorkerThreads
                 eprintln!("Join Error in Map function of ParallelTask");
             }                                    
         }
-
-        // drop all instances of manually drops
-        {
-            let inner = Arc::try_unwrap(arc_func).
-            map_err(|_|String::from("failed drop")).unwrap(); 
-            ManuallyDrop::<F>::into_inner(inner); 
-        }
+        
         {
             let inner = Arc::try_unwrap(arc_mut_task).unwrap(); 
             ManuallyDrop::into_inner(inner); 
@@ -156,7 +146,7 @@ impl WorkerThreads
     /// Task Loop runs the functions within each spawned thread. The Loop runs till the thread is able 
     /// to pop a value from the Iterator. Once there are no more values from the iterator, the loop breaks and
     /// the thread returns all values obtained till that point
-    fn task_loop<I,F,T,V>(task:Arc<ManuallyDrop<AtomicPtr<TaskQueue<I, V>>>>, f:Arc<ManuallyDrop<F>>) -> Vec<T> 
+    fn task_loop<I,F,T,V>(task:Arc<ManuallyDrop<AtomicPtr<TaskQueue<I, V>>>>, f:Arc<RwLock<F>>) -> Vec<T> 
     where I:AtomicIterator<AtomicItem = V> + Send + Sized,
     F: Fn(V) -> T + Send,
     V: Send,
@@ -166,6 +156,7 @@ impl WorkerThreads
         // let mut tot_time = 0;
         // let mut waiting_time = 0;        
         let mut res = Vec::new();  
+        let fread = f.read().unwrap();
         // let ttm = std::time::Instant::now();             
         while let Some(input) = {
             // let tm = std::time::Instant::now();
@@ -179,7 +170,7 @@ impl WorkerThreads
             val
         } 
         {                                
-            let result = f(input);                                    
+            let result = fread(input);                                    
             res.push(result);                              
         }                
         // tot_time = ttm.elapsed().as_micros();
@@ -190,7 +181,7 @@ impl WorkerThreads
     /// Task Loop runs the functions within each spawned thread. The Loop runs till the thread is able 
     /// to pop a value from the Iterator. Once there are no more values from the iterator, the loop breaks and
     /// the thread returns all values obtained till that point
-    fn for_each_loop<I,F,V>(task:Arc<ManuallyDrop<AtomicPtr<TaskQueue<I, V>>>>, f:Arc<ManuallyDrop<F>>)
+    fn for_each_loop<I,F,V>(task:Arc<ManuallyDrop<AtomicPtr<TaskQueue<I, V>>>>, f:Arc<RwLock<F>>)
     where I:AtomicIterator<AtomicItem = V> + Send + Sized,
     F: Fn(V),
     V: Send,    
@@ -198,7 +189,8 @@ impl WorkerThreads
         // let threadid = std::thread::current().id();
         // let mut tot_time = 0;
         // let mut waiting_time = 0;                  
-        // let ttm = std::time::Instant::now();      
+        // let ttm = std::time::Instant::now();
+        let fread = f.read().unwrap();      
         while let Some(input) = {
             // let tm = std::time::Instant::now();
             let val = if let Some(task_mutex) = unsafe { task.load(std::sync::atomic::Ordering::Acquire).as_mut()} 
@@ -211,7 +203,7 @@ impl WorkerThreads
             val
         } 
         {                                           
-            f(input);                                                       
+            fread(input);                                                       
         }                
         // tot_time = ttm.elapsed().as_micros();
         // println!("ID: {:?} -> total time = {} micros, waiting time = {} micros",threadid, tot_time, waiting_time);        

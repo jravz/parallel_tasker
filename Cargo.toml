@@ -1,6 +1,6 @@
 [package]
 name = "parallel_task"
-version = "0.3.40"
+version = "0.3.41"
 edition = "2021"
 authors = ["Jayanth Ravindran <jayanth.ravindran@gmail.com>"]
 description = "A fast data parallelism library for Rust"

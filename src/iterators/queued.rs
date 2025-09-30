@@ -1,4 +1,4 @@
-use std::{cell::Cell, iter::Enumerate, marker::PhantomData, sync::atomic::{AtomicBool, AtomicIsize, AtomicUsize}};
+use std::{cell::Cell, iter::Enumerate, sync::atomic::{AtomicBool, AtomicIsize, AtomicUsize}};
 
 #[allow(dead_code)]
 pub struct AtomicQueuedValues<I,T> 
@@ -27,8 +27,9 @@ thread_local!(static CURR_CHECKVAL: Cell<usize> = const { Cell::new(0) });
 /// ```
 /// use parallel_task::iterators::queued::AtomicQueuedValues;
 /// let mut vec = (0..1000).collect::<Vec<_>>();
+/// let len = vec.len();
 /// let vec_iter = vec.into_iter();
-/// let mut queue = AtomicQueuedValues::new(vec_iter);
+/// let mut queue = AtomicQueuedValues::new(vec_iter,Some(len));
 /// assert_eq!(queue.pop(), Some(9));
 /// assert_eq!(queue.pop(), Some(8));
 /// ```
@@ -36,8 +37,9 @@ thread_local!(static CURR_CHECKVAL: Cell<usize> = const { Cell::new(0) });
 /// // Testing ability to return None when there are no more elements.
 /// use parallel_task::iterators::queued::AtomicQueuedValues;
 /// let mut vec = vec![1];
+/// let len = vec.len();
 /// let vec_iter = vec.into_iter();
-/// let mut queue = AtomicQueuedValues::new(vec_iter);
+/// let mut queue = AtomicQueuedValues::new(vec_iter,Some(len));
 /// assert_eq!(queue.pop(), Some(1));
 /// assert_eq!(queue.pop(),None);
 /// assert_eq!(queue.pop(),None);
@@ -118,6 +120,7 @@ where I: Iterator<Item = T>
             } else {
                 if let Some(max) = self.len {
                     if val >= max {
+                        println!("({}: {})",val,max);
                         return false;
                     }
                 }
@@ -130,7 +133,7 @@ where I: Iterator<Item = T>
             self.test_queue.reserve(val + 1000);
         }
         
-        for i in len..val {
+        for _ in len..val {
             self.test_queue.push(None);
         }
         self.test_queue.push(Some(true));
@@ -142,8 +145,9 @@ where I: Iterator<Item = T>
     /// ```
     /// use parallel_task::iterators::queued::AtomicQueuedValues;
     /// let mut vec = (0..1000).collect::<Vec<_>>();
+    /// let len = vec.len();
     /// let vec_iter = vec.into_iter();
-    /// let mut queue = AtomicQueuedValues::new(vec_iter);
+    /// let mut queue = AtomicQueuedValues::new(vec_iter,Some(len));
     /// assert_eq!(queue.pop(), Some(9));
     /// assert_eq!(queue.pop(), Some(8));
     /// ```
@@ -183,14 +187,14 @@ where I: Iterator<Item = T>
         if !self.is_active.load(std::sync::atomic::Ordering::Relaxed) { return false; }
         if CURR_INDEX.get() <= 0 { return false; }
         if self.secondary.len() >= self.size { return false;}
-        let is_required = self.size as f64 / CURR_INDEX.get() as f64;
+        let is_required = self.queue.len() as f64 / CURR_INDEX.get() as f64;
         if is_required < 2.0 { return false; }        
 
         self.access_secondary.compare_exchange(true, false, std::sync::atomic::Ordering::SeqCst, std::sync::atomic::Ordering::SeqCst)
         .is_ok()                       
     }
 
-    fn prep_secondary(&mut self) {                                              
+    fn prep_secondary(&mut self) {    
         let to_fill_size = self.size - self.secondary.len();
         // Fill the remaining values to the queue
         for _ in 0..to_fill_size {

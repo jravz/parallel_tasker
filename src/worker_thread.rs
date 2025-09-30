@@ -12,7 +12,7 @@ pub struct WorkerThreads {pub nthreads:usize }
 impl WorkerThreads
 {
 
-    fn is_queue_active<I,V>(queue:&Arc<AtomicPtr<TaskQueue<I, V>>>) -> bool 
+    fn is_queue_active<I,V>(queue:&Arc<ManuallyDrop<AtomicPtr<TaskQueue<I, V>>>>) -> bool 
     where I:AtomicIterator<AtomicItem = V> + Send + Sized,
     V: Send
     {
@@ -23,15 +23,16 @@ impl WorkerThreads
         }
     }
 
-    pub fn run<I,F,V>(self, mut task:ParallelForEach<V,F,I>)
+    pub fn run<I,F,V>(self, task:ParallelForEach<V,F,I>)
     where I:AtomicIterator<AtomicItem = V> + Send + Sized,
     F: Fn(V) + Send + Sync,
     V: Send,    
     {
-        let mut vec_handles = Vec::new();   
-        let arc_mut_task: Arc<AtomicPtr<TaskQueue<I, V>>> = Arc::new(AtomicPtr::new(Box::into_raw(Box::new(task.iter))));        
-        let func = unsafe {*Box::from_raw(Pin::get_unchecked_mut(task.f.as_mut())) };        
-        let arc_func = Arc::new(func);
+        let mut vec_handles = Vec::new();           
+        let mut fnc = task.f;   
+        let arc_mut_task: Arc<ManuallyDrop<AtomicPtr<TaskQueue<I, V>>>> = Arc::new(ManuallyDrop::new(AtomicPtr::new(Box::into_raw(Box::new(task.iter)))));           
+        let func = ManuallyDrop::new(unsafe {*Box::from_raw(Pin::get_unchecked_mut(fnc.as_mut())) });
+        let arc_func: Arc<ManuallyDrop<F>> = Arc::new(func);
         for _ in 0..self.nthreads {
             let arc_mut_task_clone = arc_mut_task.clone();
             if !Self::is_queue_active(&arc_mut_task_clone) {
@@ -52,7 +53,17 @@ impl WorkerThreads
         for handle in vec_handles {           
             handle.unwrap().join().unwrap();            
         }
-        drop(arc_mut_task);
+        
+        // drop all instances of manually drops
+        {
+            let inner = Arc::try_unwrap(arc_func).
+            map_err(|_|String::from("failed drop")).unwrap(); 
+            ManuallyDrop::<F>::into_inner(inner); 
+        }
+        {
+            let inner = Arc::try_unwrap(arc_mut_task).unwrap(); 
+            ManuallyDrop::into_inner(inner); 
+        }  
 
     }
 
@@ -66,10 +77,7 @@ impl WorkerThreads
         let fclosure = task.f;
         let arc_mut_f = Arc::new(Mutex::new(fclosure));   
         for _ in 0..self.nthreads {
-            let arc_mut_task_clone = arc_mut_task.clone();
-            if !Self::is_queue_active(&arc_mut_task_clone) {
-                break;
-            }
+            let arc_mut_task_clone = arc_mut_task.clone();            
             let builder = std::thread::Builder::new();            
             unsafe {                  
                 let arc_mut_f_clone =  arc_mut_f.clone();              
@@ -89,15 +97,17 @@ impl WorkerThreads
 
     }
 
-    pub fn collect<I,F,T,V,C>(self, mut task:ParallelMap<V,F,T,I>) -> C
+    pub fn collect<I,F,T,V,C>(self, task:ParallelMap<V,F,T,I>) -> C
     where I:AtomicIterator<AtomicItem = V> + Send + Sized,
     F: Fn(V) -> T + Send + Sync,
     V: Send,
     T:Send,
     C: Collector<T> {
-        let mut vec_handles = Vec::new();                        
-        let arc_mut_task: Arc<AtomicPtr<TaskQueue<I, V>>> = Arc::new(AtomicPtr::new(Box::into_raw(Box::new(task.iter))));        
-        let func = ManuallyDrop::new(unsafe {*Box::from_raw(Pin::get_unchecked_mut(task.f.as_mut())) });
+        let mut vec_handles = Vec::new();     
+        let mut fnc = task.f;                   
+        let arc_mut_task: Arc<ManuallyDrop<AtomicPtr<TaskQueue<I, V>>>> = Arc::new(ManuallyDrop::new(AtomicPtr::new(Box::into_raw(Box::new(task.iter)))));           
+
+        let func = ManuallyDrop::new(unsafe {*Box::from_raw(Pin::get_unchecked_mut(fnc.as_mut())) });
         let arc_func: Arc<ManuallyDrop<F>> = Arc::new(func);
         for _ in 0..(self.nthreads) {
             let arc_mut_task_clone = arc_mut_task.clone();
@@ -128,8 +138,17 @@ impl WorkerThreads
                 eprintln!("Join Error in Map function of ParallelTask");
             }                                    
         }
-        // drop(arc_func);
-        // drop(arc_mut_task);
+
+        // drop all instances of manually drops
+        {
+            let inner = Arc::try_unwrap(arc_func).
+            map_err(|_|String::from("failed drop")).unwrap(); 
+            ManuallyDrop::<F>::into_inner(inner); 
+        }
+        {
+            let inner = Arc::try_unwrap(arc_mut_task).unwrap(); 
+            ManuallyDrop::into_inner(inner); 
+        }        
         output
     }        
     
@@ -137,7 +156,7 @@ impl WorkerThreads
     /// Task Loop runs the functions within each spawned thread. The Loop runs till the thread is able 
     /// to pop a value from the Iterator. Once there are no more values from the iterator, the loop breaks and
     /// the thread returns all values obtained till that point
-    fn task_loop<I,F,T,V>(task:Arc<AtomicPtr<TaskQueue<I, V>>>, f:Arc<ManuallyDrop<F>>) -> Vec<T> 
+    fn task_loop<I,F,T,V>(task:Arc<ManuallyDrop<AtomicPtr<TaskQueue<I, V>>>>, f:Arc<ManuallyDrop<F>>) -> Vec<T> 
     where I:AtomicIterator<AtomicItem = V> + Send + Sized,
     F: Fn(V) -> T + Send,
     V: Send,
@@ -171,7 +190,7 @@ impl WorkerThreads
     /// Task Loop runs the functions within each spawned thread. The Loop runs till the thread is able 
     /// to pop a value from the Iterator. Once there are no more values from the iterator, the loop breaks and
     /// the thread returns all values obtained till that point
-    fn for_each_loop<I,F,V>(task:Arc<AtomicPtr<TaskQueue<I,V>>>, f:Arc<F>)
+    fn for_each_loop<I,F,V>(task:Arc<ManuallyDrop<AtomicPtr<TaskQueue<I, V>>>>, f:Arc<ManuallyDrop<F>>)
     where I:AtomicIterator<AtomicItem = V> + Send + Sized,
     F: Fn(V),
     V: Send,    

@@ -82,9 +82,7 @@ macro_rules! range_impl {
                 type IntoIterator = std::ops::Range<$T>;  
                 
                 fn into_parallel_iter(self) -> ParallelIterator<Self::IntoIterator, Self::IntoItem> {
-                    let mut len = self.end - self.start;
-                    if len < 0 { len = 0; }
-
+                    let len = self.end - self.start;                    
                     let input = self.into_iter();  
                     ParallelIterator {
                         iter: AtomicQueuedValues::new_with_size(input, 1000, Some(len as usize))

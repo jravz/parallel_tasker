@@ -1,30 +1,35 @@
-use std::{cell::Cell, sync::atomic::{AtomicBool, AtomicIsize}};
-#[allow(dead_code)]
-const ONE_SEC:usize = 1;
-const TEN:usize = 10;
+use std::{cell::Cell, iter::Enumerate, sync::atomic::{AtomicBool, AtomicIsize, AtomicUsize}};
+
 #[allow(dead_code)]
 pub struct AtomicQueuedValues<I,T> 
 where I: Iterator<Item = T>
 {
-    size: usize,    
-    queue: Vec<Option<T>>,
-    iter: I,
+    size: usize,
+    len: Option<usize>,    
+    queue: Vec<Option<(usize,T)>>,
+    secondary:Vec<Option<(usize,T)>>,
+    iter: Enumerate<I>,
     ctr:AtomicIsize,
+    layclaim:AtomicUsize,
     access:AtomicBool,
-    picked_ctr:AtomicIsize,
-    pick_target:usize,
-    is_active:AtomicBool,    
+    access_secondary:AtomicBool,
+    access_primary: AtomicBool,    
+    check_val:AtomicUsize,
+    is_active:AtomicBool, 
+    test_queue:Vec<Option<bool>>  
 }
 
 thread_local!(static CURR_INDEX: Cell<isize> = const { Cell::new(-1) });
+thread_local!(static CURR_CHECKVAL: Cell<usize> = const { Cell::new(0) });
 
 /// AtomicQueuedValues allow parallel access across values within an iterator. It returns None when there are
 /// no more values to access
 /// ```
 /// use parallel_task::iterators::queued::AtomicQueuedValues;
 /// let mut vec = (0..1000).collect::<Vec<_>>();
+/// let len = vec.len();
 /// let vec_iter = vec.into_iter();
-/// let mut queue = AtomicQueuedValues::new(vec_iter);
+/// let mut queue = AtomicQueuedValues::new(vec_iter,Some(len));
 /// assert_eq!(queue.pop(), Some(9));
 /// assert_eq!(queue.pop(), Some(8));
 /// ```
@@ -32,8 +37,9 @@ thread_local!(static CURR_INDEX: Cell<isize> = const { Cell::new(-1) });
 /// // Testing ability to return None when there are no more elements.
 /// use parallel_task::iterators::queued::AtomicQueuedValues;
 /// let mut vec = vec![1];
+/// let len = vec.len();
 /// let vec_iter = vec.into_iter();
-/// let mut queue = AtomicQueuedValues::new(vec_iter);
+/// let mut queue = AtomicQueuedValues::new(vec_iter,Some(len));
 /// assert_eq!(queue.pop(), Some(1));
 /// assert_eq!(queue.pop(),None);
 /// assert_eq!(queue.pop(),None);
@@ -44,33 +50,58 @@ where I: Iterator<Item = T>
 {
     const DEFAULT_SIZE:usize = 10;
 
-    pub fn new(iter:I) -> Self {
-        let queue:Vec<Option<T>> = Vec::new();        
+    pub fn new(iter:I, len:Option<usize>) -> Self {
+        let iter = iter.enumerate();
+        let queue:Vec<Option<(usize,T)>> = Vec::new();   
+        let secondary:Vec<Option<(usize,T)>> = Vec::new();
+        let test_queue = if let Some(len) = len {
+            vec![None;len] 
+        } else {
+            vec![None; 1000]
+        };        
         let mut obj = Self {
             size: Self::DEFAULT_SIZE,
+            len,
             queue,
+            secondary,
             iter,
             ctr: AtomicIsize::new(-1),
+            layclaim:AtomicUsize::new(0),
             access: AtomicBool::new(true),
-            picked_ctr:AtomicIsize::new(0),
-            pick_target:0,
-            is_active: AtomicBool::new(true)            
+            access_secondary: AtomicBool::new(true),
+            access_primary: AtomicBool::new(true),                     
+            check_val: AtomicUsize::new(0),                     
+            is_active: AtomicBool::new(true)   ,
+            test_queue        
         };
         obj.pull_in();
         obj
     }
 
-    pub fn new_with_size(iter:I,size:usize) -> Self {
-        let queue:Vec<Option<T>> = Vec::new();      
+    pub fn new_with_size(iter:I,size:usize, len:Option<usize>) -> Self {
+        let iter = iter.enumerate();
+        let queue:Vec<Option<(usize,T)>> = Vec::new();   
+        let secondary:Vec<Option<(usize,T)>> = Vec::new();  
+        let test_queue = if let Some(len) = len {
+            vec![None;len] 
+        } else {
+            vec![None; 1000]
+        };
+        
         let mut obj = Self {
             size,
             queue,
+            len,
+            secondary,
             iter,
             ctr: AtomicIsize::new(-1),
+            layclaim:AtomicUsize::new(0),
             access: AtomicBool::new(true),
-            picked_ctr:AtomicIsize::new(0),
-            pick_target:0,
-            is_active: AtomicBool::new(true)            
+            access_secondary: AtomicBool::new(true),
+            access_primary: AtomicBool::new(true),                 
+            check_val: AtomicUsize::new(0),                          
+            is_active: AtomicBool::new(true) ,
+            test_queue           
         };
         obj.pull_in();        
         obj
@@ -80,90 +111,167 @@ where I: Iterator<Item = T>
         self.is_active.load(std::sync::atomic::Ordering::Relaxed)
     }
 
+    fn add_test_queue(&mut self, val:usize) -> bool {                
+        let len = self.test_queue.len();
+        if val < len {
+            let presence = self.test_queue[val];
+            if presence.is_some() {
+                return false;
+            } else {
+                if let Some(max) = self.len {
+                    if val >= max {
+                        println!("({}: {})",val,max);
+                        return false;
+                    }
+                }
+                self.test_queue[val] = Some(true);
+                return true;
+            }
+        }
+
+        if val > self.test_queue.capacity() {
+            self.test_queue.reserve(val + 1000);
+        }
+        
+        for _ in len..val {
+            self.test_queue.push(None);
+        }
+        self.test_queue.push(Some(true));
+        true
+    }
+
     /// Pop function retrieves a value within Some if there are values still to be retrieved.
     /// Else it returns a None
     /// ```
     /// use parallel_task::iterators::queued::AtomicQueuedValues;
     /// let mut vec = (0..1000).collect::<Vec<_>>();
+    /// let len = vec.len();
     /// let vec_iter = vec.into_iter();
-    /// let mut queue = AtomicQueuedValues::new(vec_iter);
+    /// let mut queue = AtomicQueuedValues::new(vec_iter,Some(len));
     /// assert_eq!(queue.pop(), Some(9));
     /// assert_eq!(queue.pop(), Some(8));
     /// ```
     pub fn pop(&mut self) -> Option<T> {       
 
-        let index = self.ctr.fetch_sub(1isize, std::sync::atomic::Ordering::Acquire);
-        CURR_INDEX.set(index);     
+        let index = self.ctr.fetch_sub(1isize, std::sync::atomic::Ordering::Acquire);        
+        CURR_INDEX.set(index);                    
 
-        if CURR_INDEX.get() < 0 {            
-            if let Ok(true) = self.access.compare_exchange(true, false, std::sync::atomic::Ordering::Relaxed, std::sync::atomic::Ordering::Relaxed) 
-            {                           
-                self.pull_in();                         
+        if self.secondary_needs_filling() {
+            self.prep_secondary();
+        }    
+
+        if CURR_INDEX.get() < 0 {                     
+            if let Ok(true) = self.access.compare_exchange(true, false, std::sync::atomic::Ordering::Relaxed, std::sync::atomic::Ordering::Relaxed) {                    
+                self.disable_primary_access();                                
+                self.pull_in(); 
+                self.enable_primary_access();                                     
                 self.access.store(true, std::sync::atomic::Ordering::Release);
             } else {                
                 while !self.access.load(std::sync::atomic::Ordering::Relaxed)
-                {}                
+                {
+                    std::hint::spin_loop()
+                }                
             }
 
-            if self.queue.len() > 0 { self.pop() }
+            if !self.queue.is_empty() { self.pop() }
             else { None }
-
-        } else {                     
-            let val:Option<T> = std::mem::take(&mut self.queue[CURR_INDEX.get() as usize]);                
-            self.picked_ctr.fetch_add(1, std::sync::atomic::Ordering::SeqCst);                    
-            val
-        }
-        
-
+        } else if let Some(val) = self.get_value() {
+            val                  
+        } else {
+            self.pop()            
+        }        
     }
+
+
+    fn secondary_needs_filling(&self) -> bool {
+        if !self.is_active.load(std::sync::atomic::Ordering::Relaxed) { return false; }
+        if CURR_INDEX.get() <= 0 { return false; }
+        if self.secondary.len() >= self.size { return false;}
+        let is_required = self.queue.len() as f64 / CURR_INDEX.get() as f64;
+        if is_required < 2.0 { return false; }        
+
+        self.access_secondary.compare_exchange(true, false, std::sync::atomic::Ordering::SeqCst, std::sync::atomic::Ordering::SeqCst)
+        .is_ok()                       
+    }
+
+    fn prep_secondary(&mut self) {    
+        let to_fill_size = self.size - self.secondary.len();
+        // Fill the remaining values to the queue
+        for _ in 0..to_fill_size {
+            let val = self.iter.next();
+            if val.is_some() {                                
+                self.secondary.push(val);
+            } else {
+                self.is_active.store(false, std::sync::atomic::Ordering::Release);
+                break;
+            }                                       
+        }         
+        self.access_secondary.store(true, std::sync::atomic::Ordering::SeqCst);        
+    }
+
+    fn get_value(&mut self) -> Option<Option<T>> { 
+        if self.access_primary.load(std::sync::atomic::Ordering::SeqCst) {                                                                                                           
+            if let Some(val) = self.queue.get_mut(CURR_INDEX.get() as usize) {                               
+                self.layclaim.fetch_add(1, std::sync::atomic::Ordering::Release);                                                                                                       
+                if let Some((pos,value)) = std::mem::take(val) {                                                  
+                    if self.add_test_queue(pos) {  
+                        self.layclaim.fetch_sub(1, std::sync::atomic::Ordering::Release);                      
+                        return Some(Some(value));                           
+                    }                                                                            
+                } 
+                self.layclaim.fetch_sub(1, std::sync::atomic::Ordering::Release);                                                                                                                                                                                 
+            }   
+        }                                                                                                                                                    
+        None
+    }
+
+    fn disable_primary_access(&mut self) {        
+        while self.access_primary
+        .compare_exchange(true, false, std::sync::atomic::Ordering::SeqCst,std::sync::atomic::Ordering::SeqCst)
+        .is_err() {};
+    }
+
+    fn enable_primary_access(&mut self) {
+        self.access_primary.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
 
     /// Pulls in the next set of values from the iterator in line 
     /// with the size of the queue set at the time of creation
     fn pull_in(&mut self)
-    where I: Iterator<Item = T> {
+    where I: Iterator<Item = T> {                        
+        let mut new_vec:Vec<Option<(usize,T)>> = Vec::with_capacity(self.size);
+        std::mem::swap(&mut self.queue, &mut new_vec);   
 
-        let tm = std::time::Instant::now();
-        let mut diff = 0;
-        // ensure no one is still due to pick                  
-        while (self.picked_ctr.load(std::sync::atomic::Ordering::Relaxed) < self.pick_target as isize)
-        && !self.queue.is_empty()
-        {  
-            // If this is taking more than a 100ms then its some freak condition and no more threads are 
-            // expected to be waiting for this to close.
-            diff = self.pick_target - self.picked_ctr.load(std::sync::atomic::Ordering::Relaxed) as usize;
-            // Assume 10 microseconds max per value to be picked. Counter has been selected. Only value
-            // needs to be picked. Any more time could indicate some other failure
-            if tm.elapsed().as_micros() as usize > TEN * diff {                
-                break;            
-            }            
-        }        
-                
-        // If there are any missing they will first be picked        
-        let mut new_vec = if diff > 0 {
-            self.queue.iter_mut()
-            .filter(|val| val.is_some()).map(std::mem::take).collect::<Vec<_>>()
-        } else {
-            Vec::with_capacity(self.size)
-        };        
-
-        let to_fill_size = self.size - new_vec.len();
+        //Get access and block secondary prior to this activity
+        while self.access_secondary
+        .compare_exchange(true, false, std::sync::atomic::Ordering::Relaxed, std::sync::atomic::Ordering::Relaxed)
+        .is_err(){}                                                 
         
-        // Fill the remaining values to the queue
-        for _ in 0..to_fill_size {
+        while self.layclaim.load(std::sync::atomic::Ordering::SeqCst) > 0 {}
+
+        new_vec = new_vec.into_iter().filter(|v| v.is_some())
+        .collect::<Vec<_>>();
+        let to_fill = usize::min(self.size - new_vec.len(), self.secondary.len());
+        new_vec.extend(self.secondary.drain(..to_fill));                              
+
+        //release secondary
+        self.access_secondary.store(true, std::sync::atomic::Ordering::Release);   
+     
+        let to_fill_size = self.size - new_vec.len();
+        for _ in 0..to_fill_size {            
             let val = self.iter.next();
             if val.is_some() {
-                new_vec.push(val);   
+                new_vec.push(val);
             } else {
+                self.is_active.store(false, std::sync::atomic::Ordering::Release);
                 break;
-            }
-                     
+            }                                 
         }        
-        
+
         self.queue = new_vec;
-        let to_pick = self.queue.len();        
-        self.ctr.store(to_pick as isize -1isize, std::sync::atomic::Ordering::Release);
-        self.picked_ctr.store(0, std::sync::atomic::Ordering::SeqCst);
-        self.pick_target = to_pick;
+        let to_pick = self.queue.len();                
+        self.ctr.store(to_pick as isize - 1isize, std::sync::atomic::Ordering::Release);             
     }
     
 }

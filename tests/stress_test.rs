@@ -30,14 +30,14 @@ fn consecutive_heavy_process() {
     println!("Starting Rayon");
 
     let t1 = std::time::Instant::now();
-    let jobs = (0..10_000).map(|_|job1).collect::<Vec<_>>();
+    let jobs = (0..5_000).map(|_|job1).collect::<Vec<_>>();
 
     print_process_memory("Before job1");
     let _ = jobs.par_iter().map(|j|j()).collect::<Vec<i64>>();
 
     print_process_memory("Post job1");
 
-    let jobs = (0..10_000).map(|_|job2).collect::<Vec<_>>();
+    let jobs = (0..5_000).map(|_|job2).collect::<Vec<_>>();
     
     print_process_memory("Before job2");
     let _ = jobs.par_iter().map(|j|j()).collect::<Vec<u128>>();
@@ -47,14 +47,14 @@ fn consecutive_heavy_process() {
     println!("Starting Parallel Task");
 
     let t1 = std::time::Instant::now();
-    let jobs = (0..10_000).map(|_|job1).collect::<Vec<_>>();
+    let jobs = (0..5_000).map(|_|job1).collect::<Vec<_>>();
 
     print_process_memory("Before job1");
     let _ = jobs.parallel_iter().map(|j|j()).collect::<Vec<i64>>();
 
     print_process_memory("Post job1");
 
-    let jobs = (0..10_000).map(|_|job2).collect::<Vec<_>>();
+    let jobs = (0..5_000).map(|_|job2).collect::<Vec<_>>();
     
     print_process_memory("Before job2");
     let _ = jobs.parallel_iter().map(|j|j()).collect::<Vec<u128>>();

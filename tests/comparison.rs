@@ -32,7 +32,6 @@ fn comparison_with_rayon() {
     assert_eq!(r1.len(),r2.len())
 }
 
-#[test]
 // fn into_comparison_with_rayon_case() {    
 
 //     let job = || {              

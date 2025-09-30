@@ -99,7 +99,7 @@ impl WorkerThreads
         let arc_mut_task: Arc<AtomicPtr<TaskQueue<I, V>>> = Arc::new(AtomicPtr::new(Box::into_raw(Box::new(task.iter))));        
         let func = ManuallyDrop::new(unsafe {*Box::from_raw(Pin::get_unchecked_mut(task.f.as_mut())) });
         let arc_func: Arc<ManuallyDrop<F>> = Arc::new(func);
-        for _ in 0..self.nthreads {
+        for _ in 0..(self.nthreads) {
             let arc_mut_task_clone = arc_mut_task.clone();
             
             let builder = std::thread::Builder::new();                  

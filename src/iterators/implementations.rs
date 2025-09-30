@@ -18,7 +18,7 @@ where Self: 'data
         let input = self.iter(); 
         let size = usize::max(self.len() / 1000usize,100);  
         ParallelIterator {
-            iter: AtomicQueuedValues::new_with_size(input, size)
+            iter: AtomicQueuedValues::new_with_size(input, size,Some(self.len()))
         }
      }       
 }
@@ -32,9 +32,10 @@ where Self: 'data
     
     fn into_parallel_iter(self) -> ParallelIterator<Self::IntoIterator, Self::IntoItem> {
         let size = usize::max(self.len() / 1000usize,100);  
+        let len = self.len();
         let input = self.into_iter();         
         ParallelIterator {
-            iter: AtomicQueuedValues::new_with_size(input, size)
+            iter: AtomicQueuedValues::new_with_size(input, size, Some(len))
         }
     }       
 }
@@ -48,8 +49,9 @@ where Self: 'data
     fn parallel_iter(&'data self) -> ParallelIterator<Self::RefIterator, Self::RefItem>   
     {       
         let input = self.iter();  
+        let len = self.len();
         ParallelIterator {
-            iter: AtomicQueuedValues::new_with_size(input, 1000)
+            iter: AtomicQueuedValues::new_with_size(input, 1000, Some(len))
         }
      }          
 }
@@ -61,9 +63,10 @@ where Self: 'data
     type IntoIterator = std::collections::hash_map::IntoIter<K,V>;  
     
     fn into_parallel_iter(self) -> ParallelIterator<Self::IntoIterator, Self::IntoItem> {
+        let len = self.len();
         let input = self.into_iter();          
         ParallelIterator {
-            iter: AtomicQueuedValues::new_with_size(input, 1000)
+            iter: AtomicQueuedValues::new_with_size(input, 1000, Some(len))
         }
     }       
 }
@@ -79,9 +82,12 @@ macro_rules! range_impl {
                 type IntoIterator = std::ops::Range<$T>;  
                 
                 fn into_parallel_iter(self) -> ParallelIterator<Self::IntoIterator, Self::IntoItem> {
+                    let mut len = self.end - self.start;
+                    if len < 0 { len = 0; }
+
                     let input = self.into_iter();  
                     ParallelIterator {
-                        iter: AtomicQueuedValues::new_with_size(input, 1000)
+                        iter: AtomicQueuedValues::new_with_size(input, 1000, Some(len as usize))
                     }
                 }       
             }

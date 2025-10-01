@@ -1,11 +1,46 @@
 # Parallel Task Crate
 A fast data parallelism library using Atomics to share data across threads and uniquely pull values from Collections such as Vec, HashMap, Range. It leverages a 'pull' approach and uses a concept of AtomicQueuedValues to reduce the time required for the thread to pick the next value. 
-This is achieved by queueing values in advance and allowing each thread to access a unique value within the queue based on an AtomicIsize value, that corresponds to a unique stored value in the Collection. 
-Hence, all types that implement the ParallelIter or IntoParallelIter Trait (Vec, HashMap and Range) can be consumed or passed by reference to run Map or ForEach functions on the same.
 
-The results show good performance to the popular Rayon library.
+## What is the objective of this crate?
+parallel_tasker is a high-performance parallel iteration library for Rust that provides an alternative to Rayon’s work-stealing model. I am a great admirer of Rayon crate and have used it extensively. Instead of making a 'me too', I wanted to experiment with a different algorithm. Unlike Rayon, it does not give each thread its own queue. Instead, it uses a shared atomic counter and a primary + backup batching system:
+
+Atomic counter distribution → threads claim the next available task index directly, guaranteeing unique access without heavy locking.
+
+Primary + backup batches → tasks are grouped into chunks (e.g., 100 items). While threads consume the primary batch, one thread prepares the backup in advance, minimizing wait times when the batch is replenished.
+
+Dynamic task assignment → threads grab the next available task as soon as they finish their current work. This naturally balances workload even when tasks vary in complexity, without needing work stealing.
+
+This design provides low overhead, minimal contention, and predictable cache-friendly access patterns. Benchmarks show that it performs within ~5-10% of Rayon for large workloads, such as Monte Carlo simulations with 100,000 iterations, while maintaining a simpler scheduling logic.
+
+parallel_tasker is a fully usable parallel iterator library for real-world workloads, offering a different perspective on parallelism while maintaining near-optimal performance.
+
+The results show good performance to the popular Rayon library. That said, users are encouraged to test this well within their use cases to ensure suitability and applicability. 
+
+## How this differs from Rayon
+parallel_tasker uses a different approach to task scheduling compared to Rayon:
+
+* Shared atomic counter
+
+    * Instead of giving each thread its own deque, all threads pull from a shared atomic index.
+
+    * Each thread gets a unique task without locks, minimizing contention.
+
+* Primary + backup batching
+
+    * Tasks are processed in batches (e.g., 100 items).
+
+    * While threads work through the primary batch, one thread prepares the backup batch ahead of time.
+
+    * This ensures threads never idle waiting for new work.
+
+* Dynamic task assignment
+
+    * Threads grab the next available task as soon as they finish their current one.
+
+    * Heavy tasks are naturally distributed among threads, preventing stragglers without the complexity of work stealing.
 
 Please try at your end and share your feedback at jayanth.ravindran@gmail.com.
+Note: if you wish to contribute you are more than welcome.
 
 ## Usage example
 

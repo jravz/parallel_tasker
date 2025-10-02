@@ -14,7 +14,7 @@ This design provides low overhead, minimal contention, and predictable cache-fri
 
 parallel_tasker is a fully usable parallel iterator library for real-world workloads, offering a different perspective on parallelism while maintaining near-optimal performance.
 
-The results show good performance to the popular Rayon library. That said, users are encouraged to test this well within their use cases to ensure suitability and applicability. 
+The results show good performance to the popular Rayon library. That said, as this is a recent library, users are encouraged to test this well within their use cases or POCs to ensure suitability and applicability. 
 
 ## How this differs from Rayon
 parallel_tasker uses a different approach to task scheduling compared to Rayon:

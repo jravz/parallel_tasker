@@ -33,6 +33,9 @@ impl WorkerThreads
         let arc_mut_task: Arc<ManuallyDrop<AtomicPtr<TaskQueue<I, V>>>> = Arc::new(ManuallyDrop::new(AtomicPtr::new(Box::into_raw(Box::new(task.iter)))));                   
         let arc_func: Arc<RwLock<F>> = Arc::new(RwLock::new(fnc));
         for _ in 0..self.nthreads {
+            if !Self::is_queue_active(&arc_mut_task) {
+                break;
+            }
             let arc_mut_task_clone = arc_mut_task.clone();
             if !Self::is_queue_active(&arc_mut_task_clone) {
                 break;
@@ -103,9 +106,9 @@ impl WorkerThreads
 
         let arc_func: Arc<RwLock<F>> = Arc::new(RwLock::new(fnc));
         for _ in 0..(self.nthreads) {
-            // if Self::is_queue_active(&arc_mut_task) {
-            //     break;
-            // }
+            if !Self::is_queue_active(&arc_mut_task) {
+                break;
+            }
             let arc_mut_task_clone = arc_mut_task.clone();
             
             let builder = std::thread::Builder::new();                  
@@ -159,13 +162,13 @@ impl WorkerThreads
         let fread = f.read().unwrap();
         // let ttm = std::time::Instant::now();             
         while let Some(input) = {
-            // let tm = std::time::Instant::now();
-            let val = if let Some(task_mutex) = unsafe { task.load(std::sync::atomic::Ordering::Acquire).as_mut()} 
-            {
-                task_mutex.pop()
-            } else {
+            let tm = std::time::Instant::now();
+            let val = if let Some(task_mutex) = unsafe { task.load(std::sync::atomic::Ordering::Acquire).as_mut()}             
+            {                               
+                task_mutex.pop()                               
+            } else {               
                 None
-            };
+            };                        
             // waiting_time += tm.elapsed().as_micros();            
             val
         } 

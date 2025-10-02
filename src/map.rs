@@ -1,9 +1,8 @@
 //! ParallelMap is a structure type that captures the Map object and function necessary to run the values within the AtomicIterator in parallel.
-const DEFAULT_THREADS_NUM:usize = 1;
-const CPU_2_THREAD_RATIO:usize = 2;
 
 use std::marker::PhantomData;
 use crate::task_queue::TaskQueue;
+use crate::utils;
 use crate::worker_thread::WorkerThreads;
 use super::iterators::iterator::*;
 
@@ -77,13 +76,7 @@ T:Send
 
     /// Available_parallelism() function gives an idea of the CPUs available. 
     fn max_threads() -> usize {        
-        let num_threads:usize = if let Ok(available_cpus) = std::thread::available_parallelism() {
-            available_cpus.get()
-        } else {
-            DEFAULT_THREADS_NUM
-        } * (CPU_2_THREAD_RATIO);
-
-        num_threads
+        utils::max_threads()
     }
 
     /// Set the thread pool size for running the parallel tasker.    

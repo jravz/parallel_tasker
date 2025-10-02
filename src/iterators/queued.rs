@@ -1,5 +1,7 @@
 use std::{cell::Cell, iter::Enumerate, sync::atomic::{AtomicBool, AtomicIsize, AtomicUsize}};
 
+use crate::iterators::prelude::DiscreteQueue;
+
 #[allow(dead_code)]
 pub struct AtomicQueuedValues<I,T> 
 where I: Iterator<Item = T>
@@ -30,8 +32,8 @@ thread_local!(static CURR_CHECKVAL: Cell<usize> = const { Cell::new(0) });
 /// let len = vec.len();
 /// let vec_iter = vec.into_iter();
 /// let mut queue = AtomicQueuedValues::new(vec_iter,Some(len));
-/// assert_eq!(queue.pop(), Some(9));
-/// assert_eq!(queue.pop(), Some(8));
+/// assert_eq!(queue.get(), Some(9));
+/// assert_eq!(queue.get(), Some(8));
 /// ```
 /// ```
 /// // Testing ability to return None when there are no more elements.
@@ -40,9 +42,9 @@ thread_local!(static CURR_CHECKVAL: Cell<usize> = const { Cell::new(0) });
 /// let len = vec.len();
 /// let vec_iter = vec.into_iter();
 /// let mut queue = AtomicQueuedValues::new(vec_iter,Some(len));
-/// assert_eq!(queue.pop(), Some(1));
-/// assert_eq!(queue.pop(),None);
-/// assert_eq!(queue.pop(),None);
+/// assert_eq!(queue.get(), Some(1));
+/// assert_eq!(queue.get(),None);
+/// assert_eq!(queue.get(),None);
 /// ```
 #[allow(dead_code)]
 impl<T,I> AtomicQueuedValues<I,T> 
@@ -107,7 +109,7 @@ where I: Iterator<Item = T>
         obj
     }
 
-    pub fn is_active(&self) -> bool {
+    pub fn active_status(&self) -> bool {
         self.is_active.load(std::sync::atomic::Ordering::Relaxed)
     }
 
@@ -148,10 +150,10 @@ where I: Iterator<Item = T>
     /// let len = vec.len();
     /// let vec_iter = vec.into_iter();
     /// let mut queue = AtomicQueuedValues::new(vec_iter,Some(len));
-    /// assert_eq!(queue.pop(), Some(9));
-    /// assert_eq!(queue.pop(), Some(8));
+    /// assert_eq!(queue.get(), Some(9));
+    /// assert_eq!(queue.get(), Some(8));
     /// ```
-    pub fn pop(&mut self) -> Option<T> {       
+    pub fn get(&mut self) -> Option<T> {       
 
         let index = self.ctr.fetch_sub(1isize, std::sync::atomic::Ordering::Acquire);        
         CURR_INDEX.set(index);                    
@@ -274,4 +276,16 @@ where I: Iterator<Item = T>
         self.ctr.store(to_pick as isize - 1isize, std::sync::atomic::Ordering::Release);             
     }
     
+}
+
+impl<T,I> DiscreteQueue for AtomicQueuedValues<I,T> 
+where I: Iterator<Item = T>
+{
+    type Output = T;
+    fn is_active(&self) -> bool {
+        self.active_status()
+    }
+    fn pop(&mut self) -> Option<Self::Output> {
+        self.get()
+    }
 }

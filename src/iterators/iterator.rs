@@ -3,37 +3,56 @@
 //! AtomicQueuedValues uses Atomics to ensure that each thread does not get the same value as another thread. Allowing threads to
 //! access values in the Collection in a mutually exclusive manner.
 
-use std::sync::{atomic::AtomicPtr, Arc};
+use std::{marker::PhantomData, sync::{atomic::AtomicPtr, Arc}};
 
 use crate::iterators::queued::AtomicQueuedValues;
 
 /// ParallelIter gives a version of ParallelIterator that is expected to capture the .iter output
 /// for those that implement the same like Vec, HashMap and so on. 
 #[allow(dead_code)]
-pub trait ParallelIter<'data,T>
+pub trait ParallelIter<'data,DiscQ, T>
 where Self:Sized,
+DiscQ: DiscreteQueue<Output=Self::RefItem>
 {    
-    type RefItem;
-    type RefIterator: Iterator<Item = Self::RefItem>;    
-    fn parallel_iter(&'data self) -> ParallelIterator<Self::RefIterator,Self::RefItem>;    
+    type RefItem; 
+    fn parallel_iter(&'data self) -> ParallelIterator<DiscQ, Self::RefItem>;    
 }
 
 /// IntoParallelIter gives a version of ParallelIterator that is expected to capture the .into_iter output
 /// for those that implement the same like Vec, HashMap and so on. 
 #[allow(dead_code)]
-pub trait IntoParallelIter<'data,T>
+pub trait IntoParallelIter<'data,DiscQ,T>
 where Self:Sized,
+DiscQ: DiscreteQueue<Output=Self::IntoItem>
 {    
-    type IntoItem;    
-    type IntoIterator: Iterator<Item = Self::IntoItem>;    
-    fn into_parallel_iter(self) -> ParallelIterator<Self::IntoIterator,Self::IntoItem>; 
+    type IntoItem;          
+    fn into_parallel_iter(self) -> ParallelIterator<DiscQ,Self::IntoItem>; 
+}
+
+pub trait DiscreteQueue 
+{
+    type Output;
+    fn pop(&mut self) -> Option<Self::Output>;
+    fn is_active(&self) -> bool;
 }
 
 /// ParallelIterator is comparable to Iter, but is set up for the AtomicIterator.
-pub struct ParallelIterator<I, T> 
-where I: Iterator<Item = T>
+pub struct ParallelIterator<DiscQ,T> 
+where DiscQ: DiscreteQueue<Output=T>,
 {
-    pub iter: AtomicQueuedValues<I,T>,    
+    pub iter:DiscQ,    
+    t: PhantomData<T>
+}
+
+impl<DiscQ,T> ParallelIterator<DiscQ,T> 
+where DiscQ: DiscreteQueue<Output=T>,
+{
+    pub fn new(iter:DiscQ) -> Self {
+        Self {
+            iter,            
+            t:PhantomData
+        }
+    }
 }
 
 
@@ -57,11 +76,11 @@ pub trait AtomicIterator {
     fn is_active(&self) -> bool;
 }
 
-impl<I,T> AtomicIterator for ParallelIterator<I,T> 
-where I: Iterator<Item = T>
+impl<DiscQ,T> AtomicIterator for ParallelIterator<DiscQ,T> 
+where DiscQ:DiscreteQueue<Output = T>,
 {    
-    type AtomicItem = T;
-    fn atomic_next(&mut self) -> Option<T> {
+    type AtomicItem = DiscQ::Output;
+    fn atomic_next(&mut self) -> Option<Self::AtomicItem> {
         self.iter.pop()               
     }
 

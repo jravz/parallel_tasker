@@ -2,11 +2,9 @@
 //! Fetch trait. This allows an FnMut function to be run on each value of the collection implementing
 //! Fetch.
 
-const DEFAULT_THREADS_NUM:usize = 1;
-const CPU_2_THREAD_RATIO:usize = 2;
-
 use std::marker::PhantomData;
 use crate::task_queue::TaskQueue;
+use crate::utils;
 use crate::worker_thread::WorkerThreads;
 use super::iterators::iterator::AtomicIterator;
 
@@ -72,13 +70,7 @@ V: Send,
 
     fn max_threads() -> usize {
         // available_parallelism() function gives an idea of the CPUs available 
-        let num_threads:usize = if let Ok(available_cpus) = std::thread::available_parallelism() {
-            available_cpus.get()
-        } else {
-            DEFAULT_THREADS_NUM
-        } * (CPU_2_THREAD_RATIO);
-
-        num_threads
+        utils::max_threads()
     }
 
     /// Set the thread pool size for running the parallel tasker    

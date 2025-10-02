@@ -10,6 +10,8 @@ Primary + backup batches → tasks are grouped into chunks (e.g., 100 items). Wh
 
 Dynamic task assignment → threads grab the next available task as soon as they finish their current work. This naturally balances workload even when tasks vary in complexity, without needing work stealing.
 
+Thread-level queueing - thread level queues were introduced using ranges and atomic usizes to mutually exclusively distribute items especially for into_parallel_iter and parallel_iter cases for Vec -> T and &Vec -> &T respectively, where the former consumes the T and the latter is by reference. Its expected to introduce a version of the same for HashMap and Range in the future.
+
 This design provides low overhead, minimal contention, and predictable cache-friendly access patterns. Benchmarks show that it performs within ~5-10% of Rayon for large workloads, such as Monte Carlo simulations with 100,000 iterations, while maintaining a simpler scheduling logic.
 
 parallel_tasker is a fully usable parallel iterator library for real-world workloads, offering a different perspective on parallelism while maintaining near-optimal performance.

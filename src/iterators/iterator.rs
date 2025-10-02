@@ -5,8 +5,6 @@
 
 use std::{marker::PhantomData, sync::{atomic::AtomicPtr, Arc}};
 
-use crate::iterators::queued::AtomicQueuedValues;
-
 /// ParallelIter gives a version of ParallelIterator that is expected to capture the .iter output
 /// for those that implement the same like Vec, HashMap and so on. 
 #[allow(dead_code)]
@@ -33,6 +31,7 @@ pub trait DiscreteQueue
 {
     type Output;
     fn pop(&mut self) -> Option<Self::Output>;
+    fn pull(&mut self) -> Option<Vec<Self::Output>>;
     fn is_active(&self) -> bool;
 }
 
@@ -62,6 +61,7 @@ where DiscQ: DiscreteQueue<Output=T>,
 pub trait AtomicIterator {
     type AtomicItem;
     fn atomic_next(&mut self) -> Option<Self::AtomicItem>;
+    fn atomic_pull(&mut self) -> Option<Vec<Self::AtomicItem>>;
 
     /// create a shareable iterator for safe access across threads without
     /// any overlaps
@@ -83,9 +83,14 @@ where DiscQ:DiscreteQueue<Output = T>,
     fn atomic_next(&mut self) -> Option<Self::AtomicItem> {
         self.iter.pop()               
     }
+    
 
     fn is_active(&self) -> bool {
         self.iter.is_active()
+    }
+    
+    fn atomic_pull(&mut self) -> Option<Vec<Self::AtomicItem>> {
+        self.iter.pull()
     }
 }
 

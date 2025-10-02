@@ -1,7 +1,4 @@
-use parallel_task::{iterators::prelude::DiscreteQueue, prelude::*};
-// use parallel_task::iterators::prelude::{ShareableAtomicIter, ParallelIter, ParallelIterator,AtomicIterator};
-
-
+use parallel_task::prelude::*;
 
 fn main() {
 

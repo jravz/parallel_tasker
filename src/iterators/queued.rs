@@ -288,4 +288,9 @@ where I: Iterator<Item = T>
     fn pop(&mut self) -> Option<Self::Output> {
         self.get()
     }
+    
+    fn pull(&mut self) -> Option<Vec<Self::Output>> {
+        self.pop().map(|x| vec![x])
+    }
+
 }

@@ -14,7 +14,7 @@ impl<'data, T> ParallelIter<'data,FetchInDirect<'data, T>, T> for Vec<T>
 where Self: 'data
 {
     type RefItem = &'data T;        
-    fn parallel_iter(&'data self) -> ParallelIterator<FetchInDirect<T>, Self::RefItem>   
+    fn parallel_iter(&'data self) -> ParallelIterator<FetchInDirect<'data,T>, Self::RefItem>   
     {       
         ParallelIterator::new(FetchInDirect::new(self))          
      }       

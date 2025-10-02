@@ -14,7 +14,7 @@ fn simple_test() {
     println!("PT vec: {}",tm.elapsed().as_micros()); 
     let iter = vec.into_parallel_iter();
     println!("PT iter: {}",tm.elapsed().as_micros()); 
-    let map = iter.map(|v|v+100i32).threads(8);
+    let map = iter.map(|v|v+100i32);
     println!("PT map: {}",tm.elapsed().as_micros()); 
     let coll = map.collect::<Vec<_>>();  
     println!("PT collect: {}",tm.elapsed().as_micros());  

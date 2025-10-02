@@ -23,4 +23,8 @@ V:Send
         // x
         self.iter.atomic_next()
     }
+
+    pub fn pull(&mut self) -> Option<Vec<V>> {
+        self.iter.atomic_pull()
+    }
 }

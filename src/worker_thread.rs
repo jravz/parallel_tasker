@@ -161,23 +161,28 @@ impl WorkerThreads
         let mut res = Vec::new();  
         let fread = f.read().unwrap();
         // let ttm = std::time::Instant::now();             
-        while let Some(input) = {
-            let tm = std::time::Instant::now();
-            let val = if let Some(task_mutex) = unsafe { task.load(std::sync::atomic::Ordering::Acquire).as_mut()}             
-            {                               
-                task_mutex.pop()                               
+        while let Some(inputs) = {
+            // let tm = std::time::Instant::now();
+            let inputs = if let Some(task_mutex) = unsafe { task.load(std::sync::atomic::Ordering::Acquire).as_mut()}             
+            {            
+                // println!("output {:?}",std::thread::current().id()) ;               
+                task_mutex.pull()                               
             } else {               
                 None
             };                        
             // waiting_time += tm.elapsed().as_micros();            
-            val
+            inputs
         } 
-        {                                
-            let result = fread(input);                                    
-            res.push(result);                              
+        { 
+            for input in inputs {
+                // println!("here {:?}",std::thread::current().id()) ;               
+                let result = fread(input);                                    
+                res.push(result);  
+            }                                                                       
         }                
         // tot_time = ttm.elapsed().as_micros();
         // println!("ID: {:?} -> total time = {} micros, waiting time = {} micros",threadid, tot_time, waiting_time);        
+        // println!("Done: {:?}",std::thread::current().id());
         res
     }
 

@@ -68,15 +68,11 @@ macro_rules! range_impl {
             {
                 type IntoItem = $T;                
                 
-                fn into_parallel_iter(self) -> ParallelIterator<AtomicQueuedValues<std::ops::Range<$T>,$T>, Self::IntoItem> {
-                    let tm = std::time::Instant::now();
+                fn into_parallel_iter(self) -> ParallelIterator<AtomicQueuedValues<std::ops::Range<$T>,$T>, Self::IntoItem> {                    
                     let len = self.end - self.start;  
                     let size = usize::max(len as usize / 100usize,100);                   
-                    let input = self.into_iter();  
-                    println!("Within map: {}",tm.elapsed().as_nanos()); 
-                    let tm = std::time::Instant::now();
-                    let x = ParallelIterator::new(AtomicQueuedValues::new_with_size(input, size,Some(len as usize)));
-                    println!("Within map create queue: {}",tm.elapsed().as_nanos()); 
+                    let input = self.into_iter();                      
+                    let x = ParallelIterator::new(AtomicQueuedValues::new_with_size(input, size,Some(len as usize)));                    
                     x
                 }       
             }

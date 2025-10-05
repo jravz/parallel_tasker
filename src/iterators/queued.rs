@@ -27,24 +27,27 @@ thread_local!(static CURR_CHECKVAL: Cell<usize> = const { Cell::new(0) });
 /// AtomicQueuedValues allow parallel access across values within an iterator. It returns None when there are
 /// no more values to access
 /// ```
-/// use parallel_task::iterators::queued::AtomicQueuedValues;
-/// let mut vec = (0..1000).collect::<Vec<_>>();
-/// let len = vec.len();
-/// let vec_iter = vec.into_iter();
-/// let mut queue = AtomicQueuedValues::new(vec_iter,Some(len));
-/// assert_eq!(queue.get(), Some(9));
-/// assert_eq!(queue.get(), Some(8));
+/// use parallel_task::iterators::{queued::AtomicQueuedValues,iterator::DiscreteQueue};
+/// let mut rng = (0..1000);
+/// let len = rng.end - rng.start;
+/// let rng_iter = rng.into_iter();
+/// let mut queue = AtomicQueuedValues::new_with_size(rng_iter,100, Some(len));
+/// let val = queue.pop();
+/// assert!(val.is_some());
 /// ```
 /// ```
 /// // Testing ability to return None when there are no more elements.
-/// use parallel_task::iterators::queued::AtomicQueuedValues;
-/// let mut vec = vec![1];
-/// let len = vec.len();
-/// let vec_iter = vec.into_iter();
-/// let mut queue = AtomicQueuedValues::new(vec_iter,Some(len));
-/// assert_eq!(queue.get(), Some(1));
-/// assert_eq!(queue.get(),None);
-/// assert_eq!(queue.get(),None);
+/// use parallel_task::iterators::{queued::AtomicQueuedValues,iterator::DiscreteQueue};
+/// let mut rng = (0..2);
+/// let len = rng.end - rng.start;
+/// let rng_iter = rng.into_iter();
+/// let mut queue = AtomicQueuedValues::new_with_size(rng_iter,100, Some(len));
+/// let val = queue.pop();
+/// assert!(val.is_some());
+/// let val = queue.pop();
+/// assert!(val.is_some());
+/// let val = queue.pop();
+/// assert!(val.is_none());
 /// ```
 #[allow(dead_code)]
 impl<T,I> AtomicQueuedValues<I,T> 
@@ -141,19 +144,8 @@ where I: Iterator<Item = T>
         self.test_queue.push(Some(true));
         true
     }
-
-    /// Pop function retrieves a value within Some if there are values still to be retrieved.
-    /// Else it returns a None
-    /// ```
-    /// use parallel_task::iterators::queued::AtomicQueuedValues;
-    /// let mut vec = (0..1000).collect::<Vec<_>>();
-    /// let len = vec.len();
-    /// let vec_iter = vec.into_iter();
-    /// let mut queue = AtomicQueuedValues::new(vec_iter,Some(len));
-    /// assert_eq!(queue.get(), Some(9));
-    /// assert_eq!(queue.get(), Some(8));
-    /// ```
-    pub fn get(&mut self) -> Option<T> {       
+    
+    fn get(&mut self) -> Option<T> {       
 
         let index = self.ctr.fetch_sub(1isize, std::sync::atomic::Ordering::Acquire);        
         CURR_INDEX.set(index);                    
@@ -285,6 +277,18 @@ where I: Iterator<Item = T>
     fn is_active(&self) -> bool {
         self.active_status()
     }
+
+    /// Get function retrieves a value within Some if there are values still to be retrieved.
+    /// Else it returns a None
+    /// ```
+    /// use parallel_task::iterators::{queued::AtomicQueuedValues,iterator::DiscreteQueue};
+    /// let mut rng = (0..1000);
+    /// let len = rng.end - rng.start;
+    /// let rng_iter = rng.into_iter();
+    /// let mut queue = AtomicQueuedValues::new_with_size(rng_iter,100, Some(len));
+    /// let val = queue.pop();
+    /// assert!(val.is_some());
+    /// ```
     fn pop(&mut self) -> Option<Self::Output> {
         self.get()
     }

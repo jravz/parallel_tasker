@@ -294,7 +294,15 @@ where I: Iterator<Item = T>
     }
     
     fn pull(&mut self) -> Option<Vec<Self::Output>> {
-        self.pop().map(|x| vec![x])
+        let mut res = Vec::new();
+        for i in 0..500 {
+            let val = self.get();
+            if val.is_none() { break; }
+            res.push(val.unwrap());
+        }
+        if res.is_empty() { None } else {
+            Some(res)
+        }        
     }
     
     fn len(&self) -> Option<usize> {

@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::thread::Scope;
 use std::sync::mpsc::{sync_channel as channel, SyncSender, TrySendError};
 use arc_swap::ArcSwap;
@@ -20,23 +20,22 @@ impl WorkerController
     C: Collector<T>,
     I:AtomicIterator<AtomicItem = V> + Send + Sized 
     {                
-        let buf_size = 1;           
+        let buf_size = 1;              
 
-        let result = std::thread::scope(            
+        std::thread::scope(            
             |s: &Scope<'_, '_>| {                   
                 let mut results = C::initialize();           
                 let mut threads:Vec<ThreadInfo<'_,T,V>> =Vec::new();
                 let (sender, receiver) = channel::<CMesg<V>>(buf_size);
-                let arc_f = Arc::new(f);
-                let arc_f_clone = arc_f.clone();
-                let f = ArcSwap::from(arc_f_clone);
+                let arc_f: Arc<RwLock<F>> = Arc::new(RwLock::new(f));                
+                let arc_f_clone: Arc<RwLock<F>> = arc_f.clone();                                                          
                 
                 let tm = std::time::Instant::now();                                 
-                if let Some(t) = WorkerThread::launch(s,String::from("Raman"),receiver,f) {  
+                if let Some(t) = WorkerThread::launch(s,String::from("Raman"),receiver,arc_f_clone) {  
                     t.unpark();                  
                     threads.push((t,sender));
                 }
-                let control_time = tm.elapsed().as_nanos();
+                let mut control_time = tm.elapsed().as_nanos();
                 
                 let mut vec:Option<Vec<V>>;
                 let mut task:CMesg<V>;  
@@ -82,18 +81,20 @@ impl WorkerController
                         }
                     }                    
                     
-                    if fails >= threads.len() && ( monitor_time.elapsed().as_nanos() as f64 > (control_time as f64))
+                    let elapsed_monitored_time = monitor_time.elapsed().as_nanos();
+                    if fails >= threads.len() && ( elapsed_monitored_time as f64 > (control_time as f64))
                     {                        
                         if threads.len() < crate::utils::max_threads() {
                             let tm = std::time::Instant::now();
                             let (sender, receiver) = channel::<CMesg<V>>(buf_size);
-                            let arc_f_clone = arc_f.clone();
-                            let f = ArcSwap::from(arc_f_clone);
+                            let arc_f_clone: Arc<RwLock<F>> = arc_f.clone(); 
                             let tname = format!("T{}",threads.len());
-                            if let Some(t) = WorkerThread::launch(s,tname,receiver,f) {                                                    
+                            if let Some(t) = WorkerThread::launch(s,tname,receiver,arc_f_clone) {                                                    
                                 threads.push((t,sender));
                                 // println!("New thread:{}-{}-{}",threads.len(),tm.elapsed().as_nanos(),control_time);
                                 fails = 0;
+                                control_time = tm.elapsed().as_nanos();
+                                monitor_time = std::time::Instant::now();
                             }
                         }
                     } 
@@ -101,7 +102,7 @@ impl WorkerController
                     pos += 1;
                     if pos >= threads.len() { pos = 0; }                   
                 }                   
-                // println!("Cycles done = {}",tm.elapsed().as_nanos());
+                println!("Cycles done = {}",tm.elapsed().as_nanos());
 
                 let tm = std::time::Instant::now();
                 for (_,sender) in &mut threads {   
@@ -125,12 +126,10 @@ impl WorkerController
                     };  
                     // println!("part 2 = {}",tm.elapsed().as_nanos());                                                                                    
                 }  
-                // println!("Final = {}",tm.elapsed().as_nanos());
+                println!("Final = {}",tm.elapsed().as_nanos());
                 results                                                                            
             }
-        );
-        
-        result
+        )
     }
 }
 

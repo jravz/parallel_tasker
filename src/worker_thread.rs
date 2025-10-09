@@ -100,10 +100,54 @@ impl WorkerThreads
     V: Send + Sync,
     T:Send + Sync,
     C: Collector<T> {          
-        let fnc = task.f;       
-        let q = task.iter.iter;
+        // let fnc = task.f;       
+        // let q = task.iter.iter;
+        // println!("reached worker");
+        // WorkerController::run::<F,V,T,C,I>(fnc, q)
 
-        WorkerController::run::<F,V,T,C,I>(fnc, q)
+        let mut vec_handles = Vec::new();     
+        let fnc = task.f;                           
+        let arc_mut_task: Arc<ManuallyDrop<AtomicPtr<TaskQueue<I, V>>>> = Arc::new(ManuallyDrop::new(AtomicPtr::new(Box::into_raw(Box::new(task.iter)))));           
+
+        let arc_func: Arc<RwLock<F>> = Arc::new(RwLock::new(fnc));
+        for _ in 0..(self.nthreads) {
+            if !Self::is_queue_active(&arc_mut_task) {
+                break;
+            }
+            let arc_mut_task_clone = arc_mut_task.clone();
+            
+            let builder = std::thread::Builder::new();                  
+            let result: Result<std::thread::JoinHandle<Vec<T>>, std::io::Error> = unsafe {                  
+                let arc_func_clone = Arc::clone(&arc_func);
+                builder.spawn_unchecked(move ||{Self::task_loop(arc_mut_task_clone, arc_func_clone)})                
+            };             
+
+            vec_handles.push(result);
+        }
+        
+        let mut output = C::initialize();
+        
+        for handle in vec_handles { 
+            if let Ok(handle_val) = handle {                
+                match handle_val.join() {
+                    Ok(res) => {
+                        output.extend(res.into_iter());
+                    }
+                    Err(e) => {
+                        let e = e.downcast_ref::<String>().unwrap();
+                        eprintln!("Error: {}",e);
+                    }
+                }            
+            } else {
+                eprintln!("Join Error in Map function of ParallelTask");
+            }                                    
+        }
+        
+        {
+            let inner = Arc::try_unwrap(arc_mut_task).unwrap(); 
+            ManuallyDrop::into_inner(inner); 
+        }        
+        output
         
     }        
     

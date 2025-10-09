@@ -40,11 +40,23 @@ impl<T> RawVec<T> {
 
 impl<T> Drop for RawVec<T> {
     fn drop(&mut self) {
-        // Convert back into Vec<T> so that elements get dropped properly
-        let (ptr, len, cap) = (self.buf.as_ptr(), self.buf.len(), self.buf.capacity());
+        // take the Vec<MaybeUninit<T>> out of self, replacing with an empty Vec
+        let mut buf = std::mem::take(&mut self.buf); // self.buf becomes Vec::new()
+
+        // Now we own the old Vec in `buf`. Get its raw parts:
+        let ptr = buf.as_mut_ptr() as *mut T;
+        let len = buf.len();
+        let cap = buf.capacity();
+
+        // Prevent `buf` from being dropped (which would free the allocation).
+        // We're going to reconstruct a Vec<T> that will drop the allocation properly.
+        std::mem::forget(buf);
+
         unsafe {
-            Vec::from_raw_parts(ptr as *mut T, len, cap);
-            // dropped automatically here as its not moved anywhere
+            // Recreate a Vec<T> with the same allocation and length so elements get dropped.
+            // This is safe only if the first `len` slots are actually initialized T values.
+            let _ = Vec::from_raw_parts(ptr, len, cap);
+            // `_` is dropped here, running element Drop impls and deallocating once.
         }
     }
 }
@@ -118,7 +130,7 @@ impl<T> DiscreteQueue for FetchDirect<T> {
     fn is_active(&self) -> bool {
         self.active.load(std::sync::atomic::Ordering::Relaxed)
     }
-    
+
     fn len(&self) -> Option<usize> {
         Some(self.len)
     }

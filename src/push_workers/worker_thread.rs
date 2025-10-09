@@ -65,7 +65,7 @@ where T:Send + Sync + 'scope
 {
 
     pub fn launch<'env,'a, V,F>(scope: &'scope std::thread::Scope<'scope, 'env>,name:String,
-    receiver:Receiver<CMesg<V>>,f:ArcSwap<F>) -> Option<Self> 
+    receiver:Receiver<CMesg<V>>,f:Arc<RwLock<F>>) -> Option<Self> 
     where 'env: 'scope,    
     V:Send + Sync + 'scope,
     F:Fn(V) -> T + Send + Sync + 'scope
@@ -102,13 +102,13 @@ where T:Send + Sync + 'scope
         .iter().for_each(|t| t.thread().unpark());
     }
 
-    pub fn task_loop<V,F>(receiver:Receiver<CMesg<V>>, thread_state:Arc<RwLock<ThreadShare>>,f:ArcSwap<F>) -> Vec<T>
+    pub fn task_loop<V,F>(receiver:Receiver<CMesg<V>>, thread_state:Arc<RwLock<ThreadShare>>,f:Arc<RwLock<F>>) -> Vec<T>
     where T:Send,
     V:Send,
     F:Fn(V) -> T
     {   
         let mut final_values:Vec<T> = Vec::new();     
-        let fread = f.load();        
+        let fread = f.read().unwrap();        
         loop 
         {            
             if let Ok(receipt) = receiver.recv() {
@@ -143,7 +143,7 @@ where T:Send + Sync + 'scope
                 }
             }
         } 
-
+        drop(fread);
         final_values       
     }
 

@@ -33,6 +33,7 @@ pub trait DiscreteQueue
     fn pop(&mut self) -> Option<Self::Output>;
     fn pull(&mut self) -> Option<Vec<Self::Output>>;
     fn is_active(&self) -> bool;
+    fn len(&self) -> Option<usize>;
 }
 
 /// ParallelIterator is comparable to Iter, but is set up for the AtomicIterator.
@@ -62,7 +63,7 @@ pub trait AtomicIterator {
     type AtomicItem;
     fn atomic_next(&mut self) -> Option<Self::AtomicItem>;
     fn atomic_pull(&mut self) -> Option<Vec<Self::AtomicItem>>;
-
+    fn len(&self) -> Option<usize>;
     /// create a shareable iterator for safe access across threads without
     /// any overlaps
     fn shareable(self) -> Arc<ShareableAtomicIter<Self>> 
@@ -82,6 +83,10 @@ where DiscQ:DiscreteQueue<Output = T>,
     type AtomicItem = DiscQ::Output;
     fn atomic_next(&mut self) -> Option<Self::AtomicItem> {
         self.iter.pop()               
+    }
+
+    fn len(&self) -> Option<usize> {
+        self.iter.len()
     }
     
 

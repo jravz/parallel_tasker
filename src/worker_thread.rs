@@ -5,7 +5,7 @@
 
 use std::{mem::ManuallyDrop,sync::{atomic::AtomicPtr, Arc, Mutex, RwLock}};
 
-use crate::{collector::Collector, for_each::ParallelForEach, for_each_mut::ParallelForEachMut, iterators::iterator::AtomicIterator, map::ParallelMap, task_queue::TaskQueue};
+use crate::{collector::Collector, for_each::ParallelForEach, for_each_mut::ParallelForEachMut, iterators::iterator::AtomicIterator, map::ParallelMap, push_workers::worker_controller::WorkerController, task_queue::TaskQueue};
 pub struct WorkerThreads {pub nthreads:usize }
 
 #[allow(dead_code)]
@@ -97,52 +97,14 @@ impl WorkerThreads
     pub fn collect<I,F,T,V,C>(self, task:ParallelMap<V,F,T,I>) -> C
     where I:AtomicIterator<AtomicItem = V> + Send + Sized,
     F: Fn(V) -> T + Send + Sync,
-    V: Send,
-    T:Send,
-    C: Collector<T> {
-        let mut vec_handles = Vec::new();     
-        let fnc = task.f;                           
-        let arc_mut_task: Arc<ManuallyDrop<AtomicPtr<TaskQueue<I, V>>>> = Arc::new(ManuallyDrop::new(AtomicPtr::new(Box::into_raw(Box::new(task.iter)))));           
+    V: Send + Sync,
+    T:Send + Sync,
+    C: Collector<T> {          
+        let fnc = task.f;       
+        let q = task.iter.iter;
 
-        let arc_func: Arc<RwLock<F>> = Arc::new(RwLock::new(fnc));
-        for _ in 0..(self.nthreads) {
-            if !Self::is_queue_active(&arc_mut_task) {
-                break;
-            }
-            let arc_mut_task_clone = arc_mut_task.clone();
-            
-            let builder = std::thread::Builder::new();                  
-            let result: Result<std::thread::JoinHandle<Vec<T>>, std::io::Error> = unsafe {                  
-                let arc_func_clone = Arc::clone(&arc_func);
-                builder.spawn_unchecked(move ||{Self::task_loop(arc_mut_task_clone, arc_func_clone)})                
-            };             
-
-            vec_handles.push(result);
-        }
+        WorkerController::run::<F,V,T,C,I>(fnc, q)
         
-        let mut output = C::initialize();
-        
-        for handle in vec_handles { 
-            if let Ok(handle_val) = handle {                
-                match handle_val.join() {
-                    Ok(res) => {
-                        output.extend(res.into_iter());
-                    }
-                    Err(e) => {
-                        let e = e.downcast_ref::<String>().unwrap();
-                        eprintln!("Error: {}",e);
-                    }
-                }            
-            } else {
-                eprintln!("Join Error in Map function of ParallelTask");
-            }                                    
-        }
-        
-        {
-            let inner = Arc::try_unwrap(arc_mut_task).unwrap(); 
-            ManuallyDrop::into_inner(inner); 
-        }        
-        output
     }        
     
     
@@ -158,20 +120,27 @@ impl WorkerThreads
         // let threadid = std::thread::current().id();
         // let mut tot_time = 0;
         // let mut waiting_time = 0;        
-        let mut res = Vec::new();  
+        let mut res = Vec::new(); 
+        let task_mutex =  if let Some(task_mutex) = unsafe { task.load(std::sync::atomic::Ordering::Acquire).as_mut()} {
+            task_mutex
+        } else {
+            return res;
+        };
         let fread = f.read().unwrap();
         // let ttm = std::time::Instant::now();             
         while let Some(inputs) = {
             // let tm = std::time::Instant::now();
-            let inputs = if let Some(task_mutex) = unsafe { task.load(std::sync::atomic::Ordering::Acquire).as_mut()}             
-            {            
-                // println!("output {:?}",std::thread::current().id()) ;               
-                task_mutex.pull()                               
-            } else {               
-                None
-            };                        
-            // waiting_time += tm.elapsed().as_micros();            
-            inputs
+            // let inputs = 
+            // {            
+            //     // println!("output {:?}",std::thread::current().id()) ;               
+            //     let val = task_mutex.pull();                
+            //     val
+            // // } else {               
+            // //     None
+            // // };                        
+            // // waiting_time += tm.elapsed().as_micros();            
+            // inputs
+            task_mutex.pull()
         } 
         { 
             for input in inputs {
@@ -182,7 +151,7 @@ impl WorkerThreads
         }                
         // tot_time = ttm.elapsed().as_micros();
         // println!("ID: {:?} -> total time = {} micros, waiting time = {} micros",threadid, tot_time, waiting_time);        
-        // println!("Done: {:?}",std::thread::current().id());
+        // println!("Done: {:?}",std::thread::current().id());        
         res
     }
 

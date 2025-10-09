@@ -296,5 +296,9 @@ where I: Iterator<Item = T>
     fn pull(&mut self) -> Option<Vec<Self::Output>> {
         self.pop().map(|x| vec![x])
     }
+    
+    fn len(&self) -> Option<usize> {
+        self.len
+    }
 
 }

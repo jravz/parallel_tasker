@@ -54,19 +54,22 @@ pub struct FetchDirect<T> {
     vec: RawVec<T>,
     ctr: AtomicUsize,
     active:AtomicBool, 
-    queue_size:usize   
+    queue_size:usize,
+    len:usize   
 }
 
 impl<T> FetchDirect<T> {
 
     pub fn new(vec:Vec<T>) -> Self {
         let max_threads = crate::utils::max_threads();
+        let len = vec.len();
         let optimal_q_size = vec.len() / max_threads / QUEUE_SPLIT;                    
         Self {
             vec:RawVec::new(vec),
             ctr: AtomicUsize::new(0),
             active: AtomicBool::new(true),
-            queue_size: optimal_q_size
+            queue_size: optimal_q_size,
+            len
         }
     }
 
@@ -115,24 +118,31 @@ impl<T> DiscreteQueue for FetchDirect<T> {
     fn is_active(&self) -> bool {
         self.active.load(std::sync::atomic::Ordering::Relaxed)
     }
+    
+    fn len(&self) -> Option<usize> {
+        Some(self.len)
+    }
 }
 
 pub struct FetchInDirect<'data, T> {
     vec: &'data Vec<T>,
     ctr: AtomicUsize,
     active:AtomicBool,
-    queue_size:usize       
+    queue_size:usize,
+    len:usize       
 }
 
 impl<'data, T> FetchInDirect<'data, T> {
     pub fn new(vec: &'data Vec<T>) -> Self {
         let max_threads = crate::utils::max_threads();
+        let len = vec.len();
         let optimal_q_size = vec.len() / max_threads / QUEUE_SPLIT; 
         Self {
             vec,
             ctr: AtomicUsize::new(0),
             active:AtomicBool::new(true),
-            queue_size: optimal_q_size
+            queue_size: optimal_q_size,
+            len
         }
     }
 
@@ -182,5 +192,9 @@ impl<'data, T> DiscreteQueue for FetchInDirect<'data, T> {
 
     fn is_active(&self) -> bool {
         self.active.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn len(&self) -> Option<usize> {
+        Some(self.len)
     }
 }

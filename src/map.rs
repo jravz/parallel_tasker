@@ -19,8 +19,8 @@ use super::collector::*;
 pub trait ParallelMapIter<I, V,F,T>
 where Self: AtomicIterator<AtomicItem = V> + Send + Sized,
 F: Fn(V) -> T + Send + Sync,
-V: Send,
-T:Send 
+V: Send + Sync,
+T:Send + Sync
 {
     fn map(self,f:F) -> ParallelMap<V,F,T,Self>{
         ParallelMap::new(self,f)
@@ -30,8 +30,8 @@ T:Send
 impl<I,V,F,T> ParallelMapIter<I, V,F,T> for I 
 where I: AtomicIterator<AtomicItem = V> + Send + Sized,
 F: Fn(V) -> T + Send + Sync,
-V: Send,
-T:Send {}
+V: Send + Sync,
+T:Send + Sync {}
 
 pub struct ParallelMap<V,F,T,I>
 where I: AtomicIterator<AtomicItem = V> + Send + Sized,
@@ -60,8 +60,8 @@ T:Send
 impl<I,V,F,T> ParallelMap<V,F,T,I>
 where I:AtomicIterator<AtomicItem = V> + Send + Sized,
 F: Fn(V) -> T + Send + Sync,
-V: Send,
-T:Send
+V: Send + Sync,
+T:Send + Sync
 {
     pub fn new(iter:I,f:F) -> Self
     {                   

@@ -16,7 +16,8 @@ impl WorkerThreads
     C: Collector<T> {          
         let fnc = task.f;       
         let q = task.iter.iter;        
-        WorkerController::run::<F,V,T,C,I>(fnc, q)                
+        WorkerController::new(fnc,q)
+        .run::<C>()                
     }  
 
     pub fn run<I,F,V>(self, task:ParallelForEach<V,F,I>)
@@ -25,8 +26,9 @@ impl WorkerThreads
     V: Send + Sync,    
     {
         let fnc = task.f;       
-        let q = task.iter.iter;        
-        WorkerController::run::<F,V,(),Vec<_>,I>(fnc, q);                  
+        let q = task.iter.iter;   
+        WorkerController::new(fnc,q)
+        .run::<Vec<_>>();                 
 
     }    
 }

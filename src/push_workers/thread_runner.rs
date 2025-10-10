@@ -11,7 +11,8 @@ F:Fn(V) -> T
     thread_state:Arc<RwLock<ThreadShare>>,
     sender:Sender<ThreadMesg>, 
     pos:usize, 
-    f:Arc<RwLock<F>>
+    f:Arc<RwLock<F>>,
+    buf_size: usize
 }
 
 impl<F,V,T> ThreadRunner<F,V,T> 
@@ -20,7 +21,7 @@ V:Send,
 F:Fn(V) -> T {
 
     pub fn new(receiver:Receiver<CMesg<V>>, thread_state:Arc<RwLock<ThreadShare>>,
-        sender:Sender<ThreadMesg>, pos:usize, f:Arc<RwLock<F>>) -> Self 
+        sender:Sender<ThreadMesg>, pos:usize, buf_size:usize, f:Arc<RwLock<F>>) -> Self 
     {
 
         Self {
@@ -28,7 +29,8 @@ F:Fn(V) -> T {
             thread_state,
             sender,
             pos,
-            f
+            f,
+            buf_size
         }
 
     }
@@ -56,7 +58,14 @@ F:Fn(V) -> T {
     pub fn run(&mut self) -> Vec<T> {
         let mut final_values:Vec<T> = Vec::new();     
         let fread: std::sync::RwLockReadGuard<'_, F> = self.f.read().unwrap();
-        _ = self.sender.send(ThreadMesg::Free(self.pos, std::time::Instant::now()));
+
+        // send a request for data as many times as there is buf size. Ensures that the
+        // thread does not wait much
+
+        for _ in 0..self.buf_size {
+            _ = self.sender.send(ThreadMesg::Free(self.pos, std::time::Instant::now()));
+        }
+        
         let mut wait_tm_instant = std::time::Instant::now();
         let mut waittime = 0;
         let mut processtime = 0;

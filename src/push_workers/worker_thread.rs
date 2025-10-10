@@ -66,7 +66,8 @@ where V:Send
     pub name:String,
     pub state:Arc<RwLock<ThreadShare>>,
     pos: usize,
-    sender: SyncSender<CMesg<V>>
+    sender: SyncSender<CMesg<V>>,
+    buf_size: usize
 }
 
 impl<'scope,V,T> WorkerThread<'scope,V,T> 
@@ -88,14 +89,15 @@ V:Send + Sync + 'scope
         let scoped_thread: std::thread::ScopedJoinHandle<'_, Vec<T>> = std::thread::Builder
                             ::new()
                             .name(thread_name.clone())
-                            .spawn_scoped(scope, move || Self::task_loop(receiver,state_clone,work_sender, pos, f)).unwrap();                                    
+                            .spawn_scoped(scope, move || Self::task_loop(receiver,state_clone,work_sender, pos, buf_size, f)).unwrap();                                    
 
         let worker = WorkerThread {
             name:thread_name, 
             thread: Some(scoped_thread),
             state: thread_state ,
             pos,
-            sender                    
+            sender ,
+            buf_size                   
         };        
 
         Some(worker)
@@ -129,12 +131,12 @@ V:Send + Sync + 'scope
     }    
 
     fn task_loop<F>(receiver:Receiver<CMesg<V>>, thread_state:Arc<RwLock<ThreadShare>>,
-                    sender:Sender<ThreadMesg>, pos:usize, f:Arc<RwLock<F>>) -> Vec<T>
+                    sender:Sender<ThreadMesg>, pos:usize, buf_size:usize, f:Arc<RwLock<F>>) -> Vec<T>
     where T:Send,
     V:Send,
     F:Fn(V) -> T
     {   
-        ThreadRunner::new(receiver,thread_state,sender,pos,f)
+        ThreadRunner::new(receiver,thread_state,sender,pos,buf_size, f)
         .run()
     }
 

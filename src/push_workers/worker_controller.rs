@@ -1,15 +1,14 @@
 use std::sync::{Arc, RwLock};
 use std::thread::Scope;
-use std::sync::mpsc::{sync_channel as channel, SyncSender, TrySendError};
-use arc_swap::ArcSwap;
+use std::sync::mpsc::{channel as async_channel,TrySendError};
 
 use crate::collector::Collector;
 use crate::prelude::AtomicIterator;
+use crate::push_workers::worker_thread::ThreadMesg;
 
 use super::worker_thread::{CMesg, Coordination, MessageValue, WorkerThread};
-
 pub struct WorkerController;
-type ThreadInfo<'scope, T,V> = (WorkerThread<'scope,T>,SyncSender<CMesg<V>>);
+type ThreadInfo<'scope, T,V> = WorkerThread<'scope,V,T>;
 
 impl WorkerController
 {
@@ -20,29 +19,31 @@ impl WorkerController
     C: Collector<T>,
     I:AtomicIterator<AtomicItem = V> + Send + Sized 
     {                
-        let buf_size = 1;              
+        let buf_size = 2;     
+        let max_threads = crate::utils::max_threads();              
 
         std::thread::scope(            
             |s: &Scope<'_, '_>| {                   
                 let mut results = C::initialize();           
-                let mut threads:Vec<ThreadInfo<'_,T,V>> =Vec::new();
-                let (sender, receiver) = channel::<CMesg<V>>(buf_size);
-                let arc_f: Arc<RwLock<F>> = Arc::new(RwLock::new(f));                
-                let arc_f_clone: Arc<RwLock<F>> = arc_f.clone();                                                          
+                let mut threads:Vec<ThreadInfo<'_,T,V>> =Vec::new();                
+                let arc_f: Arc<RwLock<F>> = Arc::new(RwLock::new(f));                                                                                      
                 
-                let tm = std::time::Instant::now();                                 
-                if let Some(t) = WorkerThread::launch(s,String::from("Raman"),receiver,arc_f_clone) {  
-                    t.unpark();                  
-                    threads.push((t,sender));
+                //send/receive channel to reply on success
+                let (worker_sender, all_receiver) = async_channel::<ThreadMesg>();
+
+                let tm = std::time::Instant::now();                                                                                               
+                let worker_sender_clone = worker_sender.clone();                                                         
+                let arc_f_clone: Arc<RwLock<F>> = arc_f.clone();                             
+                if let Some(t) = WorkerThread::launch(s,worker_sender_clone,threads.len(),buf_size, arc_f_clone) {                                                    
+                    threads.push(t);                                                                                                          
                 }
-                let mut control_time = tm.elapsed().as_nanos();
+                let mut control_time = tm.elapsed().as_nanos();                          
                 
-                let mut vec:Option<Vec<V>>;
+                let vec:Option<Vec<V>>;
                 let mut task:CMesg<V>;  
                 let mut fails=0;                                
-                let mut pos:usize = 0;
 
-                vec = values.atomic_pull();                    
+                vec = values.atomic_pull();                                   
                 task = if let Some(vec) = vec {
                     CMesg {
                     msgtype:Coordination::Run,                            
@@ -52,84 +53,78 @@ impl WorkerController
                     msgtype:Coordination::Done,                            
                     msg: None } 
                 };  
-                // println!("Prep works = {}",tm.elapsed().as_nanos());
-                let tm = std::time::Instant::now();
-                let mut monitor_time = std::time::Instant::now();
-                loop {                                      
-                    let thread = &mut threads[pos];
-                    match thread.1.try_send(task) {
-                        Ok(_) => {
-                            fails = 0;  
-                            monitor_time = std::time::Instant::now();                          
-                            vec = values.atomic_pull();                    
-                            if vec.is_none() { break; }
-                            task = CMesg {
-                                msgtype:Coordination::Run,                            
-                                msg: Some(MessageValue::Queue(vec.unwrap())), 
-                            };
-                        }
-                        Err(e) => {
-                            if let TrySendError::Full(mesg) = e {
-                                task = mesg;
-                                fails += 1;                                    
+                           
+                let mut process_time = std::time::Instant::now(); 
+                let mut elapsed_monitored_time = 0;
+                loop {                                                                                                              
+                    if let Ok(msg) = all_receiver.try_recv() {
+                        if let ThreadMesg::Free(pos, _) = msg {                            
+                            elapsed_monitored_time = process_time.elapsed().as_nanos();                        
+                            process_time = std::time::Instant::now();                      
+                            let thread= &mut threads[pos];                        
+                            task = if let Some((task,status)) = Self::send_task(thread, &mut values, task) {
+                                if !status { fails += 1; } 
+                                task
                             } else {
-                                task = CMesg {
-                                    msgtype:Coordination::Done,
-                                    msg: None
-                                };
-                            }
-                        }
-                    }                    
-                    
-                    let elapsed_monitored_time = monitor_time.elapsed().as_nanos();
-                    if fails >= threads.len() && ( elapsed_monitored_time as f64 > (control_time as f64))
-                    {                        
-                        if threads.len() < crate::utils::max_threads() {
-                            let tm = std::time::Instant::now();
-                            let (sender, receiver) = channel::<CMesg<V>>(buf_size);
-                            let arc_f_clone: Arc<RwLock<F>> = arc_f.clone(); 
-                            let tname = format!("T{}",threads.len());
-                            if let Some(t) = WorkerThread::launch(s,tname,receiver,arc_f_clone) {                                                    
-                                threads.push((t,sender));
-                                // println!("New thread:{}-{}-{}",threads.len(),tm.elapsed().as_nanos(),control_time);
-                                fails = 0;
-                                control_time = tm.elapsed().as_nanos();
-                                monitor_time = std::time::Instant::now();
-                            }
-                        }
+                                break;
+                            };
+                        }                                                                         
                     } 
-
-                    pos += 1;
-                    if pos >= threads.len() { pos = 0; }                   
-                }                   
-                println!("Cycles done = {}",tm.elapsed().as_nanos());
-
-                let tm = std::time::Instant::now();
-                for (_,sender) in &mut threads {   
-                    let tm = std::time::Instant::now();
-                    let mut done_task = CMesg {
-                        msgtype:Coordination::Done,
-                        msg: None
-                    };          
-                    while sender.try_send(done_task).is_err() {                        
-                        done_task = CMesg {
-                            msgtype:Coordination::Done,
-                            msg: None
-                        };
-                    }
-                    // println!("part 1 = {}",tm.elapsed().as_nanos());
-                }
-                for (thread,_) in threads {                                              
-                    let tm = std::time::Instant::now();     
-                    if let Ok(res) = thread.close(){
+ 
+                    if threads.len() < max_threads { 
+                        if elapsed_monitored_time as f64 > control_time as f64 {
+                            let tm = std::time::Instant::now();
+                            let worker_sender_clone = worker_sender.clone();                                                         
+                            let arc_f_clone: Arc<RwLock<F>> = arc_f.clone();                             
+                            if let Some(t) = WorkerThread::launch(s,worker_sender_clone,threads.len(),buf_size, arc_f_clone) {                                                    
+                                threads.push(t);                                
+                                fails = 0;                                                             
+                            }
+                            control_time = tm.elapsed().as_nanos();                                
+                        }                            
+                    }                                                                                                                                                                                                                
+                }                                                   
+                                
+                for thread in threads {                                                                    
+                    if let Ok(res) = thread.join(){
                         results.extend(res.into_iter());
-                    };  
-                    // println!("part 2 = {}",tm.elapsed().as_nanos());                                                                                    
-                }  
-                println!("Final = {}",tm.elapsed().as_nanos());
+                    };                                                                                                     
+                }                      
+                       
                 results                                                                            
             }
+            
         )
+    }
+
+    fn send_task<'scope, T,V,I>(thread:&mut WorkerThread<'scope, V,T>,
+    values:&mut I, task:CMesg<V>) -> Option<(CMesg<V>,bool)>
+    where V: Send + Sync + 'scope,
+    T: Send + Sync + 'scope,    
+    I:AtomicIterator<AtomicItem = V> + Send + Sized 
+    {                
+        let task = match thread.try_send(task) {
+            Ok(_) => {                   
+                let vec = values.atomic_pull();                                                   
+                if vec.is_none() { return None; }
+                (CMesg {
+                    msgtype:Coordination::Run,                            
+                    msg: Some(MessageValue::Queue(vec.unwrap())), 
+                },true)
+            }
+            Err(e) => {                
+                if let TrySendError::Full(mesg) = e {
+                    (mesg,false)
+                } else {
+                    (CMesg {
+                        msgtype:Coordination::Done,
+                        msg: None
+                    },false)
+                }
+            }
+        };        
+        
+        Some(task)
     }
 }
 

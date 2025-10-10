@@ -1,11 +1,12 @@
-use std::{any::Any, sync::{mpsc::Receiver, Arc, RwLock}};
-use arc_swap::ArcSwap;
-pub trait ThreadJob {
-    type Worker;
-    type JobOutput;
-    type JobInput;
+use std::{any::Any, sync::{mpsc::{sync_channel, Receiver, Sender, SyncSender}, Arc, RwLock}, time::Instant};
 
-    fn run_job(&mut self) -> Self::JobOutput;
+use crate::push_workers::thread_runner::ThreadRunner;
+
+pub enum ThreadMesg {
+    Free(usize,Instant),
+    Stopped(usize,Instant),
+    Time(usize, u128),
+    Quantity(usize, usize)    
 }
 
 #[repr(u8)]
@@ -16,7 +17,11 @@ pub enum Coordination
     Park=1,
     Done=2,
     Unwind=3,
-    Panic=4
+    Panic=4,
+    Ignore=5,
+    ProcessTime=6,
+    WaitTime=7,
+    Processed=8
 }
 
 #[derive(Clone)]
@@ -54,40 +59,43 @@ impl ThreadShare {
     }
 }
 
-pub struct WorkerThread<'scope,T> {
+pub struct WorkerThread<'scope,V,T> 
+where V:Send
+{
     pub thread:Option<std::thread::ScopedJoinHandle<'scope,Vec<T>>>,
     pub name:String,
-    pub state:Arc<RwLock<ThreadShare>>
+    pub state:Arc<RwLock<ThreadShare>>,
+    pos: usize,
+    sender: SyncSender<CMesg<V>>
 }
 
-impl<'scope,T> WorkerThread<'scope,T> 
-where T:Send + Sync + 'scope
+impl<'scope,V,T> WorkerThread<'scope,V,T> 
+where T:Send + Sync + 'scope,
+V:Send + Sync + 'scope
 {
 
-    pub fn launch<'env,'a, V,F>(scope: &'scope std::thread::Scope<'scope, 'env>,name:String,
-    receiver:Receiver<CMesg<V>>,f:Arc<RwLock<F>>) -> Option<Self> 
+    pub fn launch<'env,'a,F>(scope: &'scope std::thread::Scope<'scope, 'env>,
+    work_sender:Sender<ThreadMesg>, pos:usize, buf_size:usize, f:Arc<RwLock<F>>) -> Option<Self> 
     where 'env: 'scope,    
     V:Send + Sync + 'scope,
     F:Fn(V) -> T + Send + Sync + 'scope
-    {
-
-        // let (th_sender, th_receiver) = channel::<Vec<T>>();
-        
-        let thread_name = name.clone();
-
+    {                
+        let thread_name = format!("T:{}",pos);        
         let thread_state: Arc<RwLock<ThreadShare>> = Arc::new(RwLock::new(ThreadShare::new()));
         let state_clone: Arc<RwLock<ThreadShare>> = thread_state.clone();
+        let (sender, receiver) = sync_channel::<CMesg<V>>(buf_size);
 
         let scoped_thread: std::thread::ScopedJoinHandle<'_, Vec<T>> = std::thread::Builder
                             ::new()
-                            .name(name)
-                            .spawn_scoped(scope, move || Self::task_loop(receiver,state_clone,f)).unwrap();                            
-
+                            .name(thread_name.clone())
+                            .spawn_scoped(scope, move || Self::task_loop(receiver,state_clone,work_sender, pos, f)).unwrap();                                    
 
         let worker = WorkerThread {
             name:thread_name, 
             thread: Some(scoped_thread),
-            state: thread_state                     
+            state: thread_state ,
+            pos,
+            sender                    
         };        
 
         Some(worker)
@@ -97,54 +105,37 @@ where T:Send + Sync + 'scope
         &self.name
     }
 
+    pub fn send(&mut self, task:CMesg<V>) -> Result<(), std::sync::mpsc::SendError<CMesg<V>>> {
+        self.sender.send(task)
+    }
+
+    pub fn try_send(&mut self, task:CMesg<V>) -> Result<(), std::sync::mpsc::TrySendError<CMesg<V>>> {
+        self.sender.try_send(task)
+    }
+
+    pub fn pos(&self) -> usize {
+        self.pos
+    }
+
     pub fn unpark(&self) {               
         self.thread.as_ref()
         .iter().for_each(|t| t.thread().unpark());
     }
 
-    pub fn task_loop<V,F>(receiver:Receiver<CMesg<V>>, thread_state:Arc<RwLock<ThreadShare>>,f:Arc<RwLock<F>>) -> Vec<T>
+    fn done(&mut self) -> Result<(), std::sync::mpsc::SendError<CMesg<V>>> {
+        self.send(
+            CMesg { msgtype: Coordination::Done, msg: None }
+        )
+    }    
+
+    fn task_loop<F>(receiver:Receiver<CMesg<V>>, thread_state:Arc<RwLock<ThreadShare>>,
+                    sender:Sender<ThreadMesg>, pos:usize, f:Arc<RwLock<F>>) -> Vec<T>
     where T:Send,
     V:Send,
     F:Fn(V) -> T
     {   
-        let mut final_values:Vec<T> = Vec::new();     
-        let fread = f.read().unwrap();        
-        loop 
-        {            
-            if let Ok(receipt) = receiver.recv() {
-                match receipt.msgtype {
-                    Coordination::Park => {
-                        std::thread::park();
-                    },
-                    Coordination::Run => {                                               
-                        if let Some(values) = receipt.msg {
-                            let mut writer = thread_state.write().unwrap(); 
-                            writer.state = ThreadState::Busy;
-                            drop(writer);
-                            if let MessageValue::Queue(values) = values {                                
-                                for val in values {                                    
-                                    final_values.push(fread(val));
-                                }
-                                let mut writer = thread_state.write().unwrap();                                 
-                                writer.state = ThreadState::Done;
-                                drop(writer);                                     
-                            }                            
-                        }                                                
-                    },
-                    Coordination::Done => {                                             
-                        break;
-                    },
-                    Coordination::Unwind => {
-                        panic!("There was some error.");
-                    },
-                    Coordination::Panic => {
-                        panic!("There was some error.");
-                    },
-                }
-            }
-        } 
-        drop(fread);
-        final_values       
+        ThreadRunner::new(receiver,thread_state,sender,pos,f)
+        .run()
     }
 
     pub fn state(&self) -> ThreadState {
@@ -152,8 +143,11 @@ where T:Send + Sync + 'scope
         val        
     }
 
-    pub fn close(self) -> Result<Vec<T>, Box<dyn Any + Send + 'static>> {
-        
+    pub fn join(mut self) -> Result<Vec<T>, Box<dyn Any + Send + 'static>> 
+    where V:Send + Sync + 'scope,
+    {
+        while self.done().is_err() {
+        }
         self.thread.unwrap().join()   
 
     }

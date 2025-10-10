@@ -63,9 +63,7 @@ impl<T> Drop for RawVec<T> {
 
 
 pub struct FetchDirect<T> {
-    vec: RawVec<T>,
-    ctr: AtomicUsize,
-    active:AtomicBool, 
+    vec: Vec<T>,   
     queue_size:usize,
     len:usize   
 }
@@ -77,9 +75,7 @@ impl<T> FetchDirect<T> {
         let len = vec.len();
         let optimal_q_size = vec.len() / max_threads / QUEUE_SPLIT;                    
         Self {
-            vec:RawVec::new(vec),
-            ctr: AtomicUsize::new(0),
-            active: AtomicBool::new(true),
+            vec:vec,
             queue_size: optimal_q_size,
             len
         }
@@ -92,43 +88,20 @@ impl<T> DiscreteQueue for FetchDirect<T> {
     type Output = T;    
 
     fn pop(&mut self) -> Option<Self::Output> {
-        if let Some(idx) = TASK_QUEUE.with_borrow_mut(|t| t.next()){
-            if idx != -1 {
-                return self.vec.take(idx as usize);
-            }             
-        };
-
-        let ctr = self.ctr.fetch_add(self.queue_size,Ordering::AcqRel) as isize; 
-        let mut range = ctr..isize::min(ctr + self.queue_size as isize,self.vec.len() as isize);
-        let opt_idx = range.next();
-        TASK_QUEUE.set(range);
-        if let Some(idx) = opt_idx {
-            return self.vec.take(idx as usize);
-        }
-        None                                                          
+        self.vec.pop()                                                         
     }
 
     fn pull(&mut self) -> Option<Vec<Self::Output>> {
-        let ctr = self.ctr.fetch_add(self.queue_size,Ordering::AcqRel);         
-        if ctr >= self.vec.len() {
+        let size = usize::min(self.vec.len(),self.queue_size);
+        if size == 0 {
             None
         } else {
-            let range: Range<usize> = ctr..usize::min(ctr + self.queue_size,self.vec.len());
-            let mut res = Vec::new();
-            for idx in range {
-                if let Some(val) = self.vec.take(idx) {
-                    res.push(val);
-                } else {
-                    break;
-                }
-            }
-            if res.is_empty() { return None; }
-            Some(res)            
-        }        
+            Some(self.vec.drain(0..size).collect::<Vec<Self::Output>>())                 
+        }         
     }
 
     fn is_active(&self) -> bool {
-        self.active.load(std::sync::atomic::Ordering::Relaxed)
+        true
     }
 
     fn len(&self) -> Option<usize> {
@@ -139,6 +112,7 @@ impl<T> DiscreteQueue for FetchDirect<T> {
 pub struct FetchInDirect<'data, T> {
     vec: &'data Vec<T>,
     ctr: AtomicUsize,
+    start:usize,
     active:AtomicBool,
     queue_size:usize,
     len:usize       
@@ -151,6 +125,7 @@ impl<'data, T> FetchInDirect<'data, T> {
         let optimal_q_size = vec.len() / max_threads / QUEUE_SPLIT; 
         Self {
             vec,
+            start:0,
             ctr: AtomicUsize::new(0),
             active:AtomicBool::new(true),
             queue_size: optimal_q_size,
@@ -184,22 +159,22 @@ impl<'data, T> DiscreteQueue for FetchInDirect<'data, T> {
     }
 
     fn pull(&mut self) -> Option<Vec<Self::Output>> {
-        let ctr = self.ctr.fetch_add(self.queue_size,Ordering::AcqRel);         
-        if ctr >= self.vec.len() {
+        let size = usize::min(self.vec.len()-self.start,self.queue_size);
+        if size == 0 {
             None
         } else {
-            let range: Range<usize> = ctr..usize::min(ctr + self.queue_size,self.vec.len());
             let mut res = Vec::new();
-            for idx in range {
-                if let Some(val) = self.vec.get(idx) {
-                    res.push(val);
+            for idx in self.start..(self.start + size) {
+                if let Some(x) = self.vec.get(idx) {
+                    res.push(x);
+                    self.start += 1;
                 } else {
                     break;
                 }
             }
-            if res.is_empty() { return None; }
-            Some(res)            
-        }        
+            if res.len() == 0 { None }
+            else { Some(res) }
+        }       
     }
 
     fn is_active(&self) -> bool {

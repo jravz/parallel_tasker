@@ -1,4 +1,4 @@
-use parallel_task::prelude::{ParallelIter,ParallelMapIter};
+use parallel_task::prelude::{IntoParallelIter, ParallelIter, ParallelMapIter};
 use rayon::prelude::*;
 use tokio::time::Duration;
 
@@ -21,12 +21,13 @@ fn comparison_with_rayon() {
     let _ = vec_jobs.iter().map(|v| v()).collect::<Vec<_>>();
     println!("Non Parallel Time elapsed: {} microseconds.",tm.elapsed().as_micros());    
 
+    let v = vec_jobs.clone();
     let tm = std::time::Instant::now();    
-    let r1 = vec_jobs.parallel_iter().map(|func| func()).collect::<Vec<i32>>();    
+    let r1 = vec_jobs.into_parallel_iter().map(|func| func()).collect::<Vec<i32>>();    
     println!("Parallel Task Time elapsed: {} microseconds.",tm.elapsed().as_micros());       
 
     let tm = std::time::Instant::now();      
-    let r2 = vec_jobs.par_iter().map(|v|v()).collect::<Vec<_>>();
+    let r2 = v.into_par_iter().map(|v|v()).collect::<Vec<_>>();
     println!("Rayon Parallel Time elapsed: {} microseconds.",tm.elapsed().as_micros());       
 
     assert_eq!(r1.len(),r2.len())

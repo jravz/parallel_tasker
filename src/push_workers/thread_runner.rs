@@ -20,7 +20,8 @@ V:Send,
 F:Fn(V) -> T {
 
     pub fn new(receiver:Receiver<CMesg<V>>, thread_state:Arc<RwLock<ThreadShare>>,
-        sender:Sender<ThreadMesg>, pos:usize, f:Arc<RwLock<F>>) -> Self {
+        sender:Sender<ThreadMesg>, pos:usize, f:Arc<RwLock<F>>) -> Self 
+    {
 
         Self {
             receiver,
@@ -32,10 +33,9 @@ F:Fn(V) -> T {
 
     }
 
-    fn process(
-               &self, receipt:CMesg<V>, final_values:&mut Vec<T>, processed:&mut usize,
-               fread: &std::sync::RwLockReadGuard<'_, F>
-    ) {
+    fn process(&self, receipt:CMesg<V>, final_values:&mut Vec<T>, processed:&mut usize,
+    fread: &std::sync::RwLockReadGuard<'_, F>) 
+    {
         if let Some(values) = receipt.msg {                                                        
             let mut writer = self.thread_state.write().unwrap(); 
             writer.state = ThreadState::Busy;

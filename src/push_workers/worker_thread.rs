@@ -47,14 +47,16 @@ pub enum ThreadState {
     Park=3
 }
 
-pub struct ThreadShare {
+pub struct ThreadShare<V> {
     pub state: ThreadState,
+    pub queue:Vec<V>    
 }
 
-impl ThreadShare {
+impl<V> ThreadShare<V> {
     pub fn new() -> Self {        
         Self {
-            state: ThreadState::New,            
+            state: ThreadState::New, 
+            queue: Vec::new()
         }
     }
 }
@@ -64,7 +66,7 @@ where V:Send
 {
     pub thread:Option<std::thread::ScopedJoinHandle<'scope,Vec<T>>>,
     pub name:String,
-    pub state:Arc<RwLock<ThreadShare>>,
+    pub state:Arc<RwLock<ThreadShare<V>>>,
     pos: usize,
     sender: SyncSender<CMesg<V>>,
     buf_size: usize
@@ -82,8 +84,8 @@ V:Send + Sync + 'scope
     F:Fn(V) -> T + Send + Sync + 'scope
     {                
         let thread_name = format!("T:{}",pos);        
-        let thread_state: Arc<RwLock<ThreadShare>> = Arc::new(RwLock::new(ThreadShare::new()));
-        let state_clone: Arc<RwLock<ThreadShare>> = thread_state.clone();
+        let thread_state: Arc<RwLock<ThreadShare<V>>> = Arc::new(RwLock::new(ThreadShare::new()));
+        let state_clone: Arc<RwLock<ThreadShare<V>>> = thread_state.clone();
         let (sender, receiver) = sync_channel::<CMesg<V>>(buf_size);
 
         let scoped_thread: std::thread::ScopedJoinHandle<'_, Vec<T>> = std::thread::Builder
@@ -130,7 +132,7 @@ V:Send + Sync + 'scope
         )
     }    
 
-    fn task_loop<F>(receiver:Receiver<CMesg<V>>, thread_state:Arc<RwLock<ThreadShare>>,
+    fn task_loop<F>(receiver:Receiver<CMesg<V>>, thread_state:Arc<RwLock<ThreadShare<V>>>,
                     sender:Sender<ThreadMesg>, pos:usize, buf_size:usize, f:Arc<RwLock<F>>) -> Vec<T>
     where T:Send,
     V:Send,

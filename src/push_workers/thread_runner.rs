@@ -8,7 +8,7 @@ V:Send,
 F:Fn(V) -> T
 {
     receiver:Receiver<CMesg<V>>,
-    thread_state:Arc<RwLock<ThreadShare>>,
+    thread_state:Arc<RwLock<ThreadShare<V>>>,
     sender:Sender<ThreadMesg>, 
     pos:usize, 
     f:Arc<RwLock<F>>,
@@ -20,7 +20,7 @@ where T:Send,
 V:Send,
 F:Fn(V) -> T {
 
-    pub fn new(receiver:Receiver<CMesg<V>>, thread_state:Arc<RwLock<ThreadShare>>,
+    pub fn new(receiver:Receiver<CMesg<V>>, thread_state:Arc<RwLock<ThreadShare<V>>>,
         sender:Sender<ThreadMesg>, pos:usize, buf_size:usize, f:Arc<RwLock<F>>) -> Self 
     {
 
@@ -35,6 +35,18 @@ F:Fn(V) -> T {
 
     }
 
+    fn add_to_queue(&self, values:Vec<V>) {
+        let mut queue_write = self.thread_state.as_ref().write().unwrap();        
+        queue_write.queue = values;
+        drop(queue_write); 
+    }
+
+    fn queue_pop(&self,processed:&mut usize) -> Option<V> {
+        let mut queue_write = self.thread_state.as_ref().write().unwrap();
+        *processed += 1;
+        queue_write.queue.pop()
+    }
+
     fn process(&self, receipt:CMesg<V>, final_values:&mut Vec<T>, processed:&mut usize,
     fread: &std::sync::RwLockReadGuard<'_, F>) 
     {
@@ -43,10 +55,19 @@ F:Fn(V) -> T {
             writer.state = ThreadState::Busy;
             drop(writer);
             if let MessageValue::Queue(values) = values { 
-                *processed = *processed + values.len();                                                             
-                for val in values {                                    
-                    final_values.push(fread(val));
-                }                                
+                *processed += values.len();
+                for value in values {                    
+                    final_values.push(fread(value));
+                }
+                // self.add_to_queue(values);                                                              
+                // loop {     
+                //     let val = self.queue_pop(processed);
+                //     if let Some(val) = val {
+                //         final_values.push(fread(val));
+                //     } else {
+                //         break;
+                //     }                    
+                // }                                
                 let mut writer = self.thread_state.write().unwrap();                                 
                 writer.state = ThreadState::Done;
                 drop(writer);  

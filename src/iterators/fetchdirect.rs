@@ -1,4 +1,4 @@
-use std::{cell::RefCell, mem::MaybeUninit, ops::Range, sync::atomic::{AtomicBool, AtomicUsize, Ordering}};
+use std::{cell::RefCell, mem::MaybeUninit, ops::Range, ptr, sync::atomic::{AtomicBool, AtomicUsize, Ordering}};
 
 use crate::iterators::prelude::DiscreteQueue;
 
@@ -91,8 +91,9 @@ impl<T> DiscreteQueue for FetchDirect<T> {
         self.vec.pop()                                                         
     }
 
-    fn pull(&mut self) -> Option<Vec<Self::Output>> {
-        let size = usize::min(self.vec.len(),self.queue_size);
+    fn pull(&mut self) -> Option<Vec<Self::Output>> {        
+        let size = usize::min(self.vec.len(), self.queue_size);                
+        
         if size == 0 {
             None
         } else {
@@ -163,17 +164,11 @@ impl<'data, T> DiscreteQueue for FetchInDirect<'data, T> {
         if size == 0 {
             None
         } else {
-            let mut res = Vec::new();
-            for idx in self.start..(self.start + size) {
-                if let Some(x) = self.vec.get(idx) {
-                    res.push(x);
-                    self.start += 1;
-                } else {
-                    break;
-                }
-            }
-            if res.len() == 0 { None }
-            else { Some(res) }
+
+            let start = self.start;
+            let end = start+ size;
+            self.start += size;
+            Some(self.vec[start..end].iter().collect::<Vec<Self::Output>>())                
         }       
     }
 

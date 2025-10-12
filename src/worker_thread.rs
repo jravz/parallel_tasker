@@ -2,7 +2,7 @@
 //! spawns WorkerThreads. These worker threads can be communicated with via sync and async channels to 
 //! send data for processing and to close the same
 
-use crate::{collector::Collector, errors::WorkThreadError, for_each::ParallelForEach, iterators::iterator::AtomicIterator, map::ParallelMap, push_workers::worker_controller::WorkerController, task_queue::TaskQueue};
+use crate::{collector::Collector, errors::WorkThreadError, for_each::ParallelForEach, iterators::iterator::AtomicIterator, map::ParallelMap, push_workers::worker_controller::WorkerController};
 pub struct WorkerThreads {pub nthreads:usize }
 
 #[allow(dead_code)]
@@ -31,7 +31,7 @@ impl WorkerThreads
 
     pub fn run<I,F,V>(self, task:ParallelForEach<V,F,I>)
     where I:AtomicIterator<AtomicItem = V> + Send + Sized,
-    F: Fn(V) -> () + Send + Sync,
+    F: Fn(V) + Send + Sync,
     V: Send + Sync,    
     {
         let fnc = task.f;       

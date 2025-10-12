@@ -1,4 +1,4 @@
-use std::{cell::RefCell, mem::MaybeUninit, ops::Range, ptr, sync::atomic::{AtomicBool, AtomicUsize, Ordering}};
+use std::{cell::RefCell, mem::MaybeUninit, ops::Range, sync::atomic::{AtomicBool, AtomicUsize, Ordering}};
 
 use crate::iterators::prelude::DiscreteQueue;
 
@@ -12,6 +12,7 @@ pub struct RawVec<T>
     buf:Vec<MaybeUninit<T>>,
 }
 
+#[allow(dead_code)]
 impl<T> RawVec<T> {
     pub fn new(vec:Vec<T>) -> Self {
         let (ptr, len, cap) = (vec.as_ptr(), vec.len(), vec.capacity());
@@ -75,7 +76,7 @@ impl<T> FetchDirect<T> {
         let len = vec.len();
         let optimal_q_size = vec.len() / max_threads / QUEUE_SPLIT;                    
         Self {
-            vec:vec,
+            vec,
             queue_size: optimal_q_size,
             len
         }

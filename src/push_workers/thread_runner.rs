@@ -47,7 +47,7 @@ F:Fn(V) -> T {
             drop(writer);
             if let MessageValue::Queue(values) = values { 
                 *processed += values.len();
-                self.secondary_q.replace(values);
+                _ = self.secondary_q.replace(values);
                 while let Some(value) = self.secondary_q.pop() {                    
                     final_values.push(fread(value));
                 }                                              

@@ -27,6 +27,7 @@ DiscQ: DiscreteQueue<Output=Self::IntoItem>
     fn into_parallel_iter(self) -> ParallelIterator<DiscQ,Self::IntoItem>; 
 }
 
+#[allow(clippy::len_without_is_empty)]
 pub trait DiscreteQueue 
 {
     type Output;
@@ -59,6 +60,7 @@ where DiscQ: DiscreteQueue<Output=T>,
 /// AtomicIterator trait is applied on the  ParallelIterator that has AtomicQueuedValues 
 /// due to which it is able to manage exclusive access for each thread for values within
 /// the implemented Collection type. 
+#[allow(clippy::len_without_is_empty)]
 pub trait AtomicIterator {
     type AtomicItem;
     fn atomic_next(&mut self) -> Option<Self::AtomicItem>;

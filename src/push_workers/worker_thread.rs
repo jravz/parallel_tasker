@@ -78,6 +78,12 @@ impl<V> ThreadShare<V> {
     }
 }
 
+impl<V> Default for ThreadShare<V> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[allow(dead_code)]
 pub struct WorkerThread<'scope,V,T> 
 where V:Send

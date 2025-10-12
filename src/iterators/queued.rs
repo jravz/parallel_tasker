@@ -1,4 +1,4 @@
-use std::{cell::Cell, iter::Enumerate, sync::atomic::{AtomicBool, AtomicIsize, AtomicUsize}};
+use std::{cell::Cell, sync::atomic::{AtomicBool, AtomicIsize, AtomicUsize}};
 
 use crate::iterators::prelude::DiscreteQueue;
 
@@ -64,7 +64,8 @@ where I: Iterator<Item = T>
         } else {
             vec![None; 1000]
         };        
-        let mut obj = Self {
+        
+        Self {
             size: Self::DEFAULT_SIZE,
             len,
             queue,
@@ -78,9 +79,7 @@ where I: Iterator<Item = T>
             check_val: AtomicUsize::new(0),                     
             is_active: AtomicBool::new(true)   ,
             test_queue        
-        };
-        // obj.pull_in();
-        obj
+        }       
     }
 
     pub fn new_with_size(iter:I,size:usize, len:Option<usize>) -> Self {
@@ -93,7 +92,7 @@ where I: Iterator<Item = T>
             vec![None; 1000]
         };
         
-        let mut obj = Self {
+        Self {
             size,
             queue,
             len,
@@ -107,9 +106,7 @@ where I: Iterator<Item = T>
             check_val: AtomicUsize::new(0),                          
             is_active: AtomicBool::new(true) ,
             test_queue           
-        };
-        // obj.pull_in();        
-        obj
+        }                     
     }
 
     // pub fn active_status(&self) -> bool {

@@ -109,18 +109,18 @@ impl<T> ReadAccessor<T>
     pub fn write(&mut self, values:Vec<T>) -> Result<bool,bool> {
         if let Some(obj) = self.get_mut() {
             obj.write(values);
-            return Ok(true);
+            Ok(true)
         } else {
-            return Err(false);
+            Err(false)
         }
     }
 
     pub fn replace(&self, values:Vec<T>) -> Result<bool,bool> {
         if let Some(obj) = self.get_mut() {
             obj.replace(values);
-            return Ok(true);
+            Ok(true)
         } else {
-            return Err(false);
+            Err(false)
         }
     }
 
@@ -163,7 +163,7 @@ impl<T> ReadAccessor<T>
     }
 }
 
-#[allow(dead_code)]
+#[allow(dead_code,clippy::new_ret_no_self)]
 impl<T> LimitAccessQueue<T> 
 {
     pub fn new() -> (ReadAccessor<T>,ReadAccessor<T>) {
@@ -239,6 +239,10 @@ impl<T> LimitAccessQueue<T>
             panic!("Unknown error occurred when stealing from the queue");
         };
         response       
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.val.is_empty()
     }
 
     pub fn len(&self) -> usize {

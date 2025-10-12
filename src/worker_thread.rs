@@ -2,7 +2,7 @@
 //! spawns WorkerThreads. These worker threads can be communicated with via sync and async channels to 
 //! send data for processing and to close the same
 
-use crate::{collector::Collector, for_each::ParallelForEach, iterators::iterator::AtomicIterator, map::ParallelMap, push_workers::worker_controller::WorkerController, task_queue::TaskQueue};
+use crate::{collector::Collector, errors::WorkThreadError, for_each::ParallelForEach, iterators::iterator::AtomicIterator, map::ParallelMap, push_workers::worker_controller::WorkerController, task_queue::TaskQueue};
 pub struct WorkerThreads {pub nthreads:usize }
 
 #[allow(dead_code)]
@@ -16,8 +16,17 @@ impl WorkerThreads
     C: Collector<T> {          
         let fnc = task.f;       
         let q = task.iter.iter;        
-        WorkerController::new(fnc,q)
-        .run::<C>()                
+        match WorkerController::new(fnc,q)
+        .run::<C>() {
+            Ok(res) => { res }
+            Err(e) => {
+                if let WorkThreadError::ThreadAdd(e) = e {
+                    panic!("Error: {}",e);
+                } else {
+                    panic!("Unknown error occurred in worker controller");
+                }
+            }
+        }               
     }  
 
     pub fn run<I,F,V>(self, task:ParallelForEach<V,F,I>)
@@ -26,10 +35,16 @@ impl WorkerThreads
     V: Send + Sync,    
     {
         let fnc = task.f;       
-        let q = task.iter.iter;   
-        WorkerController::new(fnc,q)
-        .run::<Vec<_>>();                 
+        let q = task.iter.iter;            
 
+        if let Err(e) = WorkerController::new(fnc,q)
+         .run::<Vec<_>>() {            
+            if let WorkThreadError::ThreadAdd(e) = e {
+                panic!("Error: {}",e);
+            } else {
+                panic!("Unknown error occurred in worker controller");
+            }        
+        };             
     }    
 }
 

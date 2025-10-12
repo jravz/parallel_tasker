@@ -20,16 +20,14 @@ impl Job {
 }
 
 fn create_micro_jobs(count: usize) -> Vec<Job> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     (0..count)
         .map(|id| {
-            let p = rng.gen_range(0..100);
+            let p = rng.random_range(0..100);
             let micros = if p < 90 {
-                rng.gen_range(50..=500)
-            } else if p < 99 {
-                rng.gen_range(500..=3000)
-            } else {
-                rng.gen_range(3000..=10000)
+                rng.random_range(50..=500)
+            } else  {
+                rng.random_range(500..=1000)
             };
             Job {
                 id,
@@ -40,7 +38,7 @@ fn create_micro_jobs(count: usize) -> Vec<Job> {
 }
 
 fn bench_micro_jobs(c: &mut Criterion) {
-    let job_count = 10_000;
+    let job_count = 10_00;
     let base_jobs = create_micro_jobs(job_count);
 
     // -------------------

@@ -1,4 +1,4 @@
-use std::{any::Any, sync::{mpsc::{sync_channel, Receiver, Sender, SyncSender}, Arc, RwLock}, time::Instant};
+use std::{any::Any, error::Error, sync::{mpsc::{sync_channel, Receiver, Sender, SyncSender}, Arc, RwLock}, time::Instant};
 
 use crate::push_workers::thread_runner::ThreadRunner;
 
@@ -36,6 +36,16 @@ where V:Send
 {
     pub msgtype: Coordination,
     pub msg: Option<MessageValue<V>>
+}
+
+impl<V> CMesg<V>
+where V:Send  {
+    pub fn done() -> Self {
+        Self {
+            msgtype: Coordination::Done,
+            msg: None
+        }
+    }
 }
 
 #[derive(Debug,Clone,PartialEq)]
@@ -78,7 +88,7 @@ V:Send + Sync + 'scope
 {
 
     pub fn launch<'env,'a,F>(scope: &'scope std::thread::Scope<'scope, 'env>,
-    work_sender:Sender<ThreadMesg>, pos:usize, buf_size:usize, f:Arc<RwLock<F>>) -> Option<Self> 
+    work_sender:Sender<ThreadMesg>, pos:usize, buf_size:usize, f:Arc<RwLock<F>>) -> Result<Self,Box<dyn Error>> 
     where 'env: 'scope,    
     V:Send + Sync + 'scope,
     F:Fn(V) -> T + Send + Sync + 'scope
@@ -88,21 +98,25 @@ V:Send + Sync + 'scope
         let state_clone: Arc<RwLock<ThreadShare<V>>> = thread_state.clone();
         let (sender, receiver) = sync_channel::<CMesg<V>>(buf_size);
 
-        let scoped_thread: std::thread::ScopedJoinHandle<'_, Vec<T>> = std::thread::Builder
-                            ::new()
-                            .name(thread_name.clone())
-                            .spawn_scoped(scope, move || Self::task_loop(receiver,state_clone,work_sender, pos, buf_size, f)).unwrap();                                    
-
-        let worker = WorkerThread {
-            name:thread_name, 
-            thread: Some(scoped_thread),
-            state: thread_state ,
-            pos,
-            sender ,
-            buf_size                   
-        };        
-
-        Some(worker)
+        match std::thread::Builder
+        ::new()
+        .name(thread_name.clone())
+        .spawn_scoped(scope, move || Self::task_loop(receiver,state_clone,work_sender, pos, buf_size, f)) {
+            Ok(scoped_thread) => {
+                let worker = WorkerThread {
+                    name:thread_name, 
+                    thread: Some(scoped_thread),
+                    state: thread_state ,
+                    pos,
+                    sender ,
+                    buf_size                   
+                };
+                Ok(worker)
+            }
+            Err(e) => {
+                Err(Box::new(e))
+            }
+        }                            
     }
 
     pub fn name(&self) -> &String {

@@ -33,19 +33,7 @@ F:Fn(V) -> T {
             buf_size
         }
 
-    }
-
-    fn add_to_queue(&self, values:Vec<V>) {
-        let mut queue_write = self.thread_state.as_ref().write().unwrap();        
-        queue_write.queue = values;
-        drop(queue_write); 
-    }
-
-    fn queue_pop(&self,processed:&mut usize) -> Option<V> {
-        let mut queue_write = self.thread_state.as_ref().write().unwrap();
-        *processed += 1;
-        queue_write.queue.pop()
-    }
+    }    
 
     fn process(&self, receipt:CMesg<V>, final_values:&mut Vec<T>, processed:&mut usize,
     fread: &std::sync::RwLockReadGuard<'_, F>) 
@@ -58,16 +46,7 @@ F:Fn(V) -> T {
                 *processed += values.len();
                 for value in values {                    
                     final_values.push(fread(value));
-                }
-                // self.add_to_queue(values);                                                              
-                // loop {     
-                //     let val = self.queue_pop(processed);
-                //     if let Some(val) = val {
-                //         final_values.push(fread(val));
-                //     } else {
-                //         break;
-                //     }                    
-                // }                                
+                }                                              
                 let mut writer = self.thread_state.write().unwrap();                                 
                 writer.state = ThreadState::Done;
                 drop(writer);  

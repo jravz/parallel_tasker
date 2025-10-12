@@ -1,6 +1,6 @@
 [package]
 name = "parallel_task"
-version = "0.3.505"
+version = "0.4.0"
 edition = "2021"
 authors = ["Jayanth Ravindran <jayanth.ravindran@gmail.com>"]
 description = "A fast data parallelism library for Rust"
@@ -9,7 +9,6 @@ repository = "https://github.com/jravz/parallel_tasker"
 keywords = ["concurrency", "cpu", "parallelism", "thread", "multi-thread"]
 
 [dependencies]
-arc-swap = "1.7.1"
 thiserror = "2.0.16"
 
 [dev-dependencies]

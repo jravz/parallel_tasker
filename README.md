@@ -1,45 +1,23 @@
 # Parallel Task Crate
-A fast data parallelism library using Atomics to share data across threads and uniquely pull values from Collections such as Vec, HashMap, Range. It leverages a 'pull' approach and uses a concept of AtomicQueuedValues to reduce the time required for the thread to pick the next value. 
+A fast data parallelism library using Atomics to share data across threads and uniquely pull values from Collections such as Vec, HashMap, Range. It leverages a 'push' approach and employs an inhouse workstealing algorithm with atomics to manage . 
 
 ## What is the objective of this crate?
-parallel_tasker is a high-performance parallel iteration library for Rust that provides an alternative to Rayon’s work-stealing model. I am a great admirer of Rayon crate and have used it extensively. Instead of making a 'me too', I wanted to experiment with a different algorithm. Unlike Rayon, it does not give each thread its own queue. Instead, it uses a shared atomic counter and a primary + backup batching system:
+parallel_tasker is a high-performance parallel iteration library for Rust that is optional to Rayon. I am a great admirer of Rayon crate and have used it extensively. Instead of making a 'me too', I wanted to experiment with a different algorithm:
+![Flow diagram](images/paralleltaskflow.png)
 
-Atomic counter distribution → threads claim the next available task index directly, guaranteeing unique access without heavy locking.
+WorkerController - the master controller that absorbs the iter and the function closure. It operates within a scope and spawns threads as per the load.
 
-Primary + backup batches → tasks are grouped into chunks (e.g., 100 items). While threads consume the primary batch, one thread prepares the backup in advance, minimizing wait times when the batch is replenished.
+WorkerThread - the thread manager that contains a thread running a task loop. It signals when job is done and the worker controller pushes a new set of jobs
 
-Dynamic task assignment → threads grab the next available task as soon as they finish their current work. This naturally balances workload even when tasks vary in complexity, without needing work stealing.
+Work stealing - Once the main queue is exhausted, a work stealing approach has been employed to quickly redistribute work and close tasks.
+Work is prioritised based on which thread is making least progress and its jobs are picked and given to a free thread.
+An inhouse concept of LimitedAccessQueue has been employed. This can be accessed only via two ReadAccessors provided at the time of creation - primary and secondary. Only Primary has the ability to steal tasks from the Queue while both may add tasks. WorkerController employs this to redistribute tasks post the main queue being complete. Synchronisation is supported using atomics. This is a very fast queue with limited to no latency. 
 
-Thread-level queueing - thread level queues were introduced using ranges and atomic usizes to mutually exclusively distribute items especially for into_parallel_iter and parallel_iter cases for Vec -> T and &Vec -> &T respectively, where the former consumes the T and the latter is by reference. Its expected to introduce a version of the same for HashMap and Range in the future.
+This design provides low overhead, minimal contention, and predictable cache-friendly access patterns. Benchmarks show that it performs within ~5% of Rayon for large workloads, such as Monte Carlo simulations with 100,000 iterations, while maintaining a simpler scheduling logic.
 
-This design provides low overhead, minimal contention, and predictable cache-friendly access patterns. Benchmarks show that it performs within ~5-10% of Rayon for large workloads, such as Monte Carlo simulations with 100,000 iterations, while maintaining a simpler scheduling logic.
+parallel_tasker is a fully usable parallel iterator library for real-world workloads, offering a different perspective on parallelism while maintaining optimal performance as tested in cargo bench.
 
-parallel_tasker is a fully usable parallel iterator library for real-world workloads, offering a different perspective on parallelism while maintaining near-optimal performance.
-
-The results show good performance to the popular Rayon library. That said, as this is a recent library, users are encouraged to test this well within their use cases or POCs to ensure suitability and applicability. 
-
-## How this differs from Rayon
-parallel_tasker uses a different approach to task scheduling compared to Rayon:
-
-* Shared atomic counter
-
-    * Instead of giving each thread its own deque, all threads pull from a shared atomic index.
-
-    * Each thread gets a unique task without locks, minimizing contention.
-
-* Primary + backup batching
-
-    * Tasks are processed in batches (e.g., 100 items).
-
-    * While threads work through the primary batch, one thread prepares the backup batch ahead of time.
-
-    * This ensures threads never idle waiting for new work.
-
-* Dynamic task assignment
-
-    * Threads grab the next available task as soon as they finish their current one.
-
-    * Heavy tasks are naturally distributed among threads, preventing stragglers without the complexity of work stealing.
+The benchmarking results are very good and show comparable performance to the popular Rayon library. That said, as this is a recent library, users are encouraged to test this well within their use cases or POCs to ensure suitability and applicability. 
 
 Please try at your end and share your feedback at jayanth.ravindran@gmail.com.
 Note: if you wish to contribute you are more than welcome.
@@ -68,44 +46,3 @@ let r1 = vec_jobs.into_parallel_iter().map(|func| func()).collect::<Vec<i32>>();
 // Print all values using a for_each. This runs for_each concurrently on a Vec or HashMap
 r1.parallel_iter().for_each(|val| { print!("{} ",*val);});
 ```
-
-# ShareableAtomicIter:
-ShareableAtomicIter enables Vec and HashMap that implement the Fetch trait to easily distributed across threads. Values can be safely accessed without any risk of overlaps. Thus allowing you to design how you wish to process these collections across your threads.
-```
-use parallel_task::prelude::*;
-
-// Lets create a simple vector of 100 values that we wish to share across 
-    // two threads
-    let values = (0..100).collect::<Vec<_>>();
-
-    //Lets create a scope to run the two threads in parallel
-    std::thread::scope(|s| 
-        {
-            // use parallel_iter to share by reference and into_parallel_iter to consume the values            
-            let parallel_iter = values.parallel_iter();
-            // Apply '.shareable()' to get a ShareableAtomicIter within an Arc
-            let shared_vec = parallel_iter.shareable();
-            //Get a clone for the second thread
-            let share_clone = shared_vec.clone();
-            
-            // Lets spawn the first thread
-            s.spawn(move || {
-                let tid = std::thread::current().id();
-                //Just do .next() and get unique values without overlap with other threads
-                while let Some(val) = shared_vec.next(){
-                    print!(" [{:?}: {}] ",tid,val);
-                }
-            });
-
-            // Lets spawn the second thread
-            s.spawn(move || {
-                let tid = std::thread::current().id();
-                while let Some(val) = share_clone.next(){
-                    print!(" [{:?}: {}] ",tid,val);
-                }
-            });
-
-        }
-    );
-```
-

@@ -1,9 +1,11 @@
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-pub enum TaskError {
+pub enum WorkThreadError {
     #[error("join error")]
-    ThreadJoin,    
+    ThreadJoin, 
+    #[error("thread add error : {0}")] 
+    ThreadAdd(String),  
     #[error("other error - {0}")]
     Other(String),
 }

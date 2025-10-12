@@ -27,12 +27,14 @@ DiscQ: DiscreteQueue<Output=Self::IntoItem>
     fn into_parallel_iter(self) -> ParallelIterator<DiscQ,Self::IntoItem>; 
 }
 
+#[allow(clippy::len_without_is_empty)]
 pub trait DiscreteQueue 
 {
     type Output;
     fn pop(&mut self) -> Option<Self::Output>;
     fn pull(&mut self) -> Option<Vec<Self::Output>>;
     fn is_active(&self) -> bool;
+    fn len(&self) -> Option<usize>;
 }
 
 /// ParallelIterator is comparable to Iter, but is set up for the AtomicIterator.
@@ -58,11 +60,12 @@ where DiscQ: DiscreteQueue<Output=T>,
 /// AtomicIterator trait is applied on the  ParallelIterator that has AtomicQueuedValues 
 /// due to which it is able to manage exclusive access for each thread for values within
 /// the implemented Collection type. 
+#[allow(clippy::len_without_is_empty)]
 pub trait AtomicIterator {
     type AtomicItem;
     fn atomic_next(&mut self) -> Option<Self::AtomicItem>;
     fn atomic_pull(&mut self) -> Option<Vec<Self::AtomicItem>>;
-
+    fn len(&self) -> Option<usize>;
     /// create a shareable iterator for safe access across threads without
     /// any overlaps
     fn shareable(self) -> Arc<ShareableAtomicIter<Self>> 
@@ -82,6 +85,10 @@ where DiscQ:DiscreteQueue<Output = T>,
     type AtomicItem = DiscQ::Output;
     fn atomic_next(&mut self) -> Option<Self::AtomicItem> {
         self.iter.pop()               
+    }
+
+    fn len(&self) -> Option<usize> {
+        self.iter.len()
     }
     
 

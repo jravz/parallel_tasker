@@ -5,7 +5,6 @@
 pub use crate::iterators::prelude::{AtomicIterator,ParallelIter,IntoParallelIter};
 pub use crate::{
     map::ParallelMapIter,
-    for_each::ParallelForEachIter,
-    for_each_mut::ParallelForEachMutIter
+    for_each::ParallelForEachIter    
 };
 pub use crate::task_queue::TaskQueue;

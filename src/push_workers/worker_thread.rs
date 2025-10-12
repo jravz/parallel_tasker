@@ -1,6 +1,6 @@
 use std::{any::Any, error::Error, sync::{mpsc::{sync_channel, Receiver, Sender, SyncSender}, Arc, RwLock}, time::Instant};
 
-use crate::push_workers::thread_runner::ThreadRunner;
+use crate::{accessors::limit_queue::{self, ReadAccessor}, push_workers::thread_runner::ThreadRunner};
 
 pub enum ThreadMesg {
     Free(usize,Instant),
@@ -46,6 +46,13 @@ where V:Send  {
             msg: None
         }
     }
+
+    pub fn run_task(values:Vec<V>) -> Self {
+        Self {
+            msgtype: Coordination::Run,
+            msg: Some(MessageValue::Queue(values))
+        }
+    }
 }
 
 #[derive(Debug,Clone,PartialEq)]
@@ -71,6 +78,7 @@ impl<V> ThreadShare<V> {
     }
 }
 
+#[allow(dead_code)]
 pub struct WorkerThread<'scope,V,T> 
 where V:Send
 {
@@ -79,6 +87,7 @@ where V:Send
     pub state:Arc<RwLock<ThreadShare<V>>>,
     pos: usize,
     sender: SyncSender<CMesg<V>>,
+    pub primary_q:ReadAccessor<V>,
     buf_size: usize
 }
 
@@ -98,10 +107,12 @@ V:Send + Sync + 'scope
         let state_clone: Arc<RwLock<ThreadShare<V>>> = thread_state.clone();
         let (sender, receiver) = sync_channel::<CMesg<V>>(buf_size);
 
+        let (primary_q, secondary_q) = limit_queue::LimitAccessQueue::<V>::new();
+
         match std::thread::Builder
         ::new()
         .name(thread_name.clone())
-        .spawn_scoped(scope, move || Self::task_loop(receiver,state_clone,work_sender, pos, buf_size, f)) {
+        .spawn_scoped(scope, move || Self::task_loop(receiver,state_clone,work_sender, pos, buf_size, secondary_q, f)) {
             Ok(scoped_thread) => {
                 let worker = WorkerThread {
                     name:thread_name, 
@@ -109,6 +120,7 @@ V:Send + Sync + 'scope
                     state: thread_state ,
                     pos,
                     sender ,
+                    primary_q,
                     buf_size                   
                 };
                 Ok(worker)
@@ -147,12 +159,13 @@ V:Send + Sync + 'scope
     }    
 
     fn task_loop<F>(receiver:Receiver<CMesg<V>>, thread_state:Arc<RwLock<ThreadShare<V>>>,
-                    sender:Sender<ThreadMesg>, pos:usize, buf_size:usize, f:Arc<RwLock<F>>) -> Vec<T>
+                    sender:Sender<ThreadMesg>, pos:usize, buf_size:usize, 
+                    secondary_q:ReadAccessor<V>, f:Arc<RwLock<F>>) -> Vec<T>
     where T:Send,
     V:Send,
     F:Fn(V) -> T
     {   
-        ThreadRunner::new(receiver,thread_state,sender,pos,buf_size, f)
+        ThreadRunner::new(receiver,thread_state,sender,pos,buf_size,secondary_q, f)
         .run()
     }
 

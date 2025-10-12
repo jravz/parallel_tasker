@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::sync::{Arc, RwLock};
 use std::thread::Scope;
 use std::sync::mpsc::{channel as async_channel, Receiver, Sender, TrySendError};
@@ -53,9 +54,7 @@ I:AtomicIterator<AtomicItem = V> + Send + Sized
         
         let vec = self.values.atomic_pull();                                   
         if let Some(vec) = vec {
-            Some(CMesg {
-            msgtype:Coordination::Run,                            
-            msg: Some(MessageValue::Queue(vec))}) 
+            Some(CMesg::run_task(vec)) 
         } else {
             None
         }
@@ -103,6 +102,9 @@ I:AtomicIterator<AtomicItem = V> + Send + Sized
                            
                 let mut process_time = std::time::Instant::now(); 
                 let mut elapsed_monitored_time = 0;
+
+                let mut free_threads:VecDeque<usize> = VecDeque::new();
+
                 loop {                                                                                                              
                     if let Ok(msg) = self.all_receiver.try_recv() {
                         if let ThreadMesg::Free(pos, _) = msg {                            
@@ -112,6 +114,7 @@ I:AtomicIterator<AtomicItem = V> + Send + Sized
                             task = if let Some((task,_)) = self.send_task(thread,  task) {                                
                                 task
                             } else {
+                                free_threads.push_back(pos);
                                 break;
                             };
                         }                                                                         
@@ -126,13 +129,87 @@ I:AtomicIterator<AtomicItem = V> + Send + Sized
                             control_time = tm.elapsed().as_nanos();                                
                         }                            
                     }                                                                                                                                                                                                                
+                }
+                
+                let mut ignore_threads = vec![false;threads.len()];
+
+                // let tm = std::time::Instant::now(); 
+                // let mut inprogress_threads:Vec<usize> = (0..threads.len())
+                //                                         .filter_map(|pos| {
+                //                                             if threads[pos].primary_q.is_empty() {
+                //                                                 None
+                //                                             } else {
+                //                                                 Some(pos)
+                //                                             }
+                //                                         }).collect::<Vec<usize>>();
+                // println!("in prog list = {}",tm.elapsed().as_micros());  
+                // do work stealing and engage free threads and close out all threads
+                let tm = std::time::Instant::now(); 
+                // println!("Inprogress = {:?}",inprogress_threads);
+
+                let mut task:Option<CMesg<V>> = None;
+                loop {                     
+
+                    let mut maxlen:usize = 0;
+                    let mut maxpos:isize = -1;
+                    if task.is_none() {
+                        for (pos,thread) in &mut threads.iter_mut().enumerate() {
+                            let currlen = thread.primary_q.len();
+                            if currlen > maxlen {
+                                maxpos = pos as isize;
+                                maxlen = currlen;
+                            }                           
+                        }
+
+                        if maxpos == -1 { break; }
+
+                        if let Some(pending) = threads[maxpos as usize].primary_q.steal_half() {
+                            task = Some(CMesg::run_task(pending));                                                     
+                        }
+                    }                    
+
+                    if task.is_some() {                        
+                        if let Some(free_pos) = free_threads.pop_front() {
+                            if free_pos != maxpos as usize {
+                                let new_task = task.unwrap();
+                                let free_thread = &mut threads[free_pos];                            
+                                if let Err(fail_task) = self.send_leaked_task(free_thread, new_task) {
+                                    println!("Failed: From:{} To:{}",maxpos,free_pos);
+                                    task = Some(fail_task);
+                                } else {
+                                    println!("Success: From:{} To:{}",maxpos,free_pos);
+                                    ignore_threads[free_pos] = true;
+                                    task = None;
+                                }
+                            } else {
+                                free_threads.push_back(free_pos);
+                            }
+                            
+                        }
+                    } else {
+                        break;
+                    }                                                            
+
+                    // Get the next free thread
+                    while let Ok(msg) = self.all_receiver.try_recv() {
+                        if let ThreadMesg::Free(pos, _) = msg {   
+                            println!("Freed:{}",pos); 
+                            // if !ignore_threads[pos] {
+                                free_threads.push_back(pos);  
+                            // }                                                                             
+                        }
+                    }                                                                       
                 }                                                   
-                                
+                println!("work stealing = {}",tm.elapsed().as_micros());    
+
+                //join all threads   
+                let tm = std::time::Instant::now();         
                 for thread in threads {                                                                    
                     if let Ok(res) = thread.join(){
                         results.extend(res.into_iter());
                     };                                                                                                     
-                }                      
+                }  
+                println!("time to join = {}",tm.elapsed().as_micros());                    
                        
                 Ok(results)
             }
@@ -141,6 +218,19 @@ I:AtomicIterator<AtomicItem = V> + Send + Sized
 
         res
     }
+
+    fn send_leaked_task<'scope>(&mut self, thread:&mut WorkerThread<'scope, V,T>, task:CMesg<V>) -> Result<(),CMesg<V>>
+    where V: Send + Sync + 'scope,
+    T: Send + Sync + 'scope,    
+    I:AtomicIterator<AtomicItem = V> + Send + Sized 
+    { 
+        if let Err(TrySendError::Full(e)) = thread.try_send(task) {
+            return Err(e);
+        };
+
+        Ok(())
+    }
+    
 
     fn send_task<'scope>(&mut self, thread:&mut WorkerThread<'scope, V,T>, task:CMesg<V>) -> Option<(CMesg<V>,bool)>
     where V: Send + Sync + 'scope,

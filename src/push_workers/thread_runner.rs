@@ -1,6 +1,6 @@
 use std::sync::{mpsc::{Receiver, Sender}, Arc, RwLock};
 
-use crate::push_workers::worker_thread::{CMesg, Coordination, MessageValue, ThreadMesg, ThreadShare, ThreadState};
+use crate::{accessors::limit_queue::ReadAccessor, push_workers::worker_thread::{CMesg, Coordination, MessageValue, ThreadMesg, ThreadShare, ThreadState}};
 
 pub struct ThreadRunner<F,V,T> 
 where T:Send,
@@ -12,6 +12,7 @@ F:Fn(V) -> T
     sender:Sender<ThreadMesg>, 
     pos:usize, 
     f:Arc<RwLock<F>>,
+    secondary_q:ReadAccessor<V>,
     buf_size: usize
 }
 
@@ -21,7 +22,8 @@ V:Send,
 F:Fn(V) -> T {
 
     pub fn new(receiver:Receiver<CMesg<V>>, thread_state:Arc<RwLock<ThreadShare<V>>>,
-        sender:Sender<ThreadMesg>, pos:usize, buf_size:usize, f:Arc<RwLock<F>>) -> Self 
+        sender:Sender<ThreadMesg>, pos:usize, buf_size:usize, secondary_q:ReadAccessor<V>, 
+        f:Arc<RwLock<F>>) -> Self 
     {
 
         Self {
@@ -30,6 +32,7 @@ F:Fn(V) -> T {
             sender,
             pos,
             f,
+            secondary_q,
             buf_size
         }
 
@@ -44,7 +47,8 @@ F:Fn(V) -> T {
             drop(writer);
             if let MessageValue::Queue(values) = values { 
                 *processed += values.len();
-                for value in values {                    
+                self.secondary_q.replace(values);
+                while let Some(value) = self.secondary_q.pop() {                    
                     final_values.push(fread(value));
                 }                                              
                 let mut writer = self.thread_state.write().unwrap();                                 

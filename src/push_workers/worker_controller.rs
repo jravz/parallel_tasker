@@ -147,60 +147,80 @@ I:AtomicIterator<AtomicItem = V> + Send + Sized
                 let tm = std::time::Instant::now(); 
                 // println!("Inprogress = {:?}",inprogress_threads);
 
-                let mut task:Option<CMesg<V>> = None;
-                loop {                     
-
-                    let mut maxlen:usize = 0;
+                if threads.len() > 2 {
+                    let mut task:Option<CMesg<V>> = None;
+                    let mut min_rate_change:f64;
                     let mut maxpos:isize = -1;
-                    if task.is_none() {
-                        for (pos,thread) in &mut threads.iter_mut().enumerate() {
-                            let currlen = thread.primary_q.len();
-                            if currlen > maxlen {
-                                maxpos = pos as isize;
-                                maxlen = currlen;
-                            }                           
-                        }
+                    let mut jobstatus = (0..threads.len())
+                    .map(|idx| (threads[idx].primary_q.len(),0.0))
+                    .collect::<Vec<(usize,f64)>>();
+                    loop {                                         
+                        if task.is_none() {
+                            min_rate_change = 1.0;
+                            maxpos = -1;
+                            let mut maxlen:usize = 0;
+                            for (pos,thread) in &mut threads.iter_mut().enumerate() {
+                                let currlen = thread.primary_q.len();
+                                let (lastlen, _rate_of_change) = jobstatus[pos];                            
+                                let curr_rate_change = if (lastlen == 0) || (lastlen < currlen) { 1.0 } else { (lastlen - currlen) as f64 / lastlen as f64 };                                                        
+                                jobstatus[pos] = (currlen,curr_rate_change);
 
-                        if maxpos == -1 { break; }
-
-                        if let Some(pending) = threads[maxpos as usize].primary_q.steal_half() {
-                            task = Some(CMesg::run_task(pending));                                                     
-                        }
-                    }                    
-
-                    if task.is_some() {                        
-                        if let Some(free_pos) = free_threads.pop_front() {
-                            if free_pos != maxpos as usize {
-                                let new_task = task.unwrap();
-                                let free_thread = &mut threads[free_pos];                            
-                                if let Err(fail_task) = self.send_leaked_task(free_thread, new_task) {
-                                    println!("Failed: From:{} To:{}",maxpos,free_pos);
-                                    task = Some(fail_task);
-                                } else {
-                                    println!("Success: From:{} To:{}",maxpos,free_pos);
-                                    ignore_threads[free_pos] = true;
-                                    task = None;
-                                }
-                            } else {
-                                free_threads.push_back(free_pos);
+                                if curr_rate_change < min_rate_change  && currlen > 0 &&  currlen > maxlen {
+                                    // print!(" ({}::{}) ",pos,curr_rate_change);
+                                    maxpos = pos as isize;
+                                    min_rate_change = curr_rate_change;
+                                    maxlen = currlen;
+                                }                           
                             }
-                            
-                        }
-                    } else {
-                        break;
-                    }                                                            
 
-                    // Get the next free thread
-                    while let Ok(msg) = self.all_receiver.try_recv() {
-                        if let ThreadMesg::Free(pos, _) = msg {   
-                            println!("Freed:{}",pos); 
-                            // if !ignore_threads[pos] {
-                                free_threads.push_back(pos);  
-                            // }                                                                             
-                        }
-                    }                                                                       
-                }                                                   
-                println!("work stealing = {}",tm.elapsed().as_micros());    
+                            if maxpos == -1 { 
+                                // println!("No max available");
+                                break; }
+
+                            if let Some(pending) = threads[maxpos as usize].primary_q.steal_half() {
+                                // println!("Out: {}->Len:{}",maxpos,pending.len());
+                                task = Some(CMesg::run_task(pending));                                                     
+                            } else {
+                                // println!("Steal failed: ");
+                            }
+                        }                    
+
+                        if task.is_some() {                        
+                            if let Some(free_pos) = free_threads.pop_front() {
+                                if free_pos != maxpos as usize {
+                                    let new_task = task.unwrap();
+                                    let free_thread = &mut threads[free_pos];                            
+                                    if let Err(fail_task) = self.send_leaked_task(free_thread, new_task) {
+                                        // println!("Failed: From:{} To:{}",maxpos,free_pos);
+                                        task = Some(fail_task);
+                                    } else {
+                                        // println!("Success: From:{} To:{}",maxpos,free_pos);
+                                        ignore_threads[free_pos] = true;
+                                        task = None;
+                                    }
+                                } else {
+                                    // println!("Retry:From:{} To:{}",maxpos,free_pos);
+                                    free_threads.push_back(free_pos);
+                                }
+                                
+                            }
+                        } else {
+                            break;
+                        }                                                            
+
+                        // Get the next free thread
+                        while let Ok(msg) = self.all_receiver.try_recv() {
+                            if let ThreadMesg::Free(pos, _) = msg {   
+                                // println!("Freed:{}",pos); 
+                                // if !ignore_threads[pos] {
+                                    free_threads.push_back(pos);  
+                                // }                                                                             
+                            }
+                        }                                                                       
+                    }     
+                }
+                                                              
+                // println!("work stealing = {}",tm.elapsed().as_micros());    
 
                 //join all threads   
                 let tm = std::time::Instant::now();         
@@ -209,7 +229,7 @@ I:AtomicIterator<AtomicItem = V> + Send + Sized
                         results.extend(res.into_iter());
                     };                                                                                                     
                 }  
-                println!("time to join = {}",tm.elapsed().as_micros());                    
+                // println!("time to join = {}",tm.elapsed().as_micros());                    
                        
                 Ok(results)
             }

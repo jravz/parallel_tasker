@@ -154,7 +154,7 @@ impl<T> ReadAccessor<T>
             }
             ReadAccessorType::Primary => {                
                 if let Some(obj) = self.get_mut() {
-                    obj.steal()
+                    obj.steal_half()
                 } else {
                     None
                 }

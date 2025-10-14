@@ -1,7 +1,5 @@
-use crate::utils::SpinBackoff;
-
+use crate::utils::SpinWait;
 use super::read_accessor::*;
-
 use std::sync::{atomic::AtomicBool, Arc};
 
 pub struct LimitAccessQueue<T> {
@@ -62,9 +60,7 @@ impl<T> LimitAccessQueue<T>
     }
 
     pub fn is_empty(&mut self) -> bool { 
-        self.with_write_block(|s| {
-            s.val.is_empty()
-        })               
+        self.len() == 0              
     }
 
     pub fn len(&mut self) -> usize {         
@@ -79,7 +75,7 @@ impl<T> LimitAccessQueue<T>
 
     pub fn with_write_block<F,Output>(&mut self, f:F) -> Output
     where F: FnOnce(&mut Self) -> Output {                          
-        SpinBackoff::loop_while_mut(||self.atomic_write_block_to_true().is_err());                            
+        SpinWait::loop_while_mut(||self.atomic_write_block_to_true().is_err());                            
         let output = f(self);
         self.write_block.store(false, std::sync::atomic::Ordering::SeqCst);                 
         output

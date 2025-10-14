@@ -50,9 +50,10 @@ where V:Send  {
     pub fn run_task(values:Vec<V>) -> Self {
         Self {
             msgtype: Coordination::Run,
-            msg: Some(MessageValue::Queue(values))
+            msg: None
         }
     }
+    
 }
 
 #[derive(Debug,Clone,PartialEq)]

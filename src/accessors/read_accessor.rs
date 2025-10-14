@@ -1,6 +1,6 @@
 use std::{hint::spin_loop, ops::{Deref, DerefMut}, sync::{atomic::AtomicPtr, Arc}};
 
-use crate::{accessors::limit_queue::LimitAccessQueue, utils::SpinBackoff};
+use crate::{accessors::limit_queue::LimitAccessQueue, utils::SpinWait};
 
 
 /// Add a primary and secondary accessor to easily differentiate during usage

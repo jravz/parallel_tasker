@@ -90,6 +90,10 @@ I:AtomicIterator<AtomicItem = V> + Send + Sized
         }                              
     }
 
+    fn get_free_threads<'scope>(threads:&mut Vec<WorkerThread<'scope, V,T>>, free_queue:&mut VecDeque<usize>) {
+
+    }
+
 
     pub fn run<C>(&mut self) -> Result<C,WorkThreadError>
     where C: Collector<T>,    
@@ -118,11 +122,7 @@ I:AtomicIterator<AtomicItem = V> + Send + Sized
                 let mut process_time = std::time::Instant::now();                                           
                 loop {                                                                                                                                  
                     if let Ok(ThreadMesg::Free(pos, _)) = self.all_receiver.try_recv() {                                                                                                                         
-                        process_time = std::time::Instant::now();
-                        // for thread in &mut threads {
-                        //     print!(" {}: {}",thread.pos(),thread.primary_q.len());
-                        // }    
-                        // println!("");                                                
+                        process_time = std::time::Instant::now();                                                                       
                         let thread= &mut threads[pos];                                                                        
                         task = if let Some((task,_)) = self.send_task(thread,  task) {                                
                             task
@@ -169,63 +169,28 @@ I:AtomicIterator<AtomicItem = V> + Send + Sized
                                     min_rate_change = curr_rate_change;
                                     maxlen = currlen;
                                 }                           
-                            }
+                            }                            
 
-                            // println!("rate_change_array:{:?}",rate_change_array);
-                            // println!("job sta:{:?}",jobstatus);
-                            // let mut outlier_values = crate::utils::lower_leg_values_outside_central_interval(&rate_change_array,0.70);
-                            // if !outlier_values.is_empty() {
-                            //     print!(" Outliers: {:?} ",outlier_values);
-                            //     if let Some((pos,_))= outlier_values.pop() {
-                            //         println!("pos = {}",pos);
-                            //         maxpos = pos as isize;
-                            //     }                                
-                            // } else {
-                            //     let status = jobstatus.iter().enumerate().filter_map(|(pos,val)| {if val.1 > 0.0 {Some(pos)} else {None}})
-                            //     .collect::<Vec<usize>>();
-
-                            //    if status.len() > 1 {
-                            //     maxpos = status[0] as isize;
-                            //    }
-                            // }
-
-                            // if !free_threads.is_empty() {
-                            //     println!(" State: ({}::{}::{}) ",maxpos,maxlen, min_rate_change);
-                            // }
-
-                            if maxpos == -1 { 
-                                // println!("No max available");
+                            if maxpos == -1 {                                 
                                 break; 
                             }
 
-                            if let Some(pending) = threads[maxpos as usize].primary_q.steal_half() {
-                                // println!("Out: {}->Len:{}",maxpos,pending.len());
-                                // println!("Free: {:?}",free_threads);
+                            if let Some(pending) = threads[maxpos as usize].primary_q.steal_half() {                                
                                 task = Some(CMesg::run_task(pending));                                                     
                             } 
                         }                    
 
                         if task.is_some() {                                                 
-                            if let Some(free_pos) = free_threads.pop_front() {
-                                // for thread in &mut threads {
-                                //     print!(" {}: {}",thread.pos(),thread.primary_q.len());
-                                // }    
-                                // println!(" free: {}, max:{}",free_pos,maxpos); 
-                                // if free_pos != maxpos as usize {
-                                    let new_task = task.unwrap();
-                                    let free_thread = &mut threads[free_pos];                            
-                                    if let Err(fail_task) = self.send_leaked_task(free_thread, new_task) {
-                                        // println!("Failed: From:{} To:{}",maxpos,free_pos);
-                                        task = Some(fail_task);
-                                    } else {
-                                        // println!("Success: From:{} To:{}",maxpos,free_pos);                                        
-                                        task = None;
-                                    }
-                                // } else {
-                                //     // println!("Retry:From:{} To:{}",maxpos,free_pos);
-                                //     free_threads.push_back(free_pos);
-                                // }
-                                
+                            if let Some(free_pos) = free_threads.pop_front() {                                
+                                let new_task = task.unwrap();
+                                let free_thread = &mut threads[free_pos];                            
+                                if let Err(fail_task) = self.send_leaked_task(free_thread, new_task) {
+                                    // println!("Failed: From:{} To:{}",maxpos,free_pos);
+                                    task = Some(fail_task);
+                                } else {
+                                    // println!("Success: From:{} To:{}",maxpos,free_pos);                                        
+                                    task = None;
+                                }                                                              
                             }
                         } else {
                             break;
@@ -282,11 +247,14 @@ I:AtomicIterator<AtomicItem = V> + Send + Sized
     }
     
 
-    fn send_task<'scope>(&mut self, thread:&mut WorkerThread<'scope, V,T>, task:CMesg<V>) -> Option<(CMesg<V>,bool)>
+    fn send_task<'scope>(&mut self, thread:&mut WorkerThread<'scope, V,T>) -> Option<(CMesg<V>,bool)>
     where V: Send + Sync + 'scope,
     T: Send + Sync + 'scope,    
     I:AtomicIterator<AtomicItem = V> + Send + Sized 
-    {                
+    {     
+        
+        thread.primary_q.replace(self.values.atomic_pull());
+
         let task = match thread.try_send(task) {
             Ok(_) => { 
                 if let Some(task) = self.next_task(){

@@ -14,23 +14,23 @@ pub fn max_threads() -> usize {
     num_threads
 }
 
-/// SpinBackoff struct is used wherever atomics are used to control resource access over a normal locking approach.
+/// SpinWait struct is used wherever atomics are used to control resource access over a normal locking approach.
 /// This usually comes into play whenever a compare_exchange or other function is being called.
 /// As best practice, it is strongly recommended that the spin loop is terminated after a finite amount of iterations and 
 /// an appropriate blocking syscall is made. This function achieves that.
-/// SpinBackoff is designed to enable spin looping in a responsible manner 
-pub struct SpinBackoff;
+/// SpinWait is designed to enable spin looping in a responsible manner 
+pub struct SpinWait;
 
 #[allow(dead_code)]
-impl SpinBackoff {
+impl SpinWait {
     /// loop_while is an fn closure that acts like a predicate that is checked   
     /// ```
-    /// use parallel_task::utils::SpinBackoff;
+    /// use parallel_task::utils::SpinWait;
     /// use std::cell::Cell;
     /// struct Tester(Cell<usize>);
     /// let val = &Tester(Cell::new(0));
     /// let predicate = || { let y = val.0.get(); val.0.set(y + 1); val.0.get() < 10};
-    /// SpinBackoff::loop_while(predicate);
+    /// SpinWait::loop_while(predicate);
     /// assert_eq!(val.0.get(),10);
     /// ``` 
     pub fn loop_while<F>(predicate:F)
@@ -45,10 +45,10 @@ impl SpinBackoff {
     /// loop_while_mut is an fnmut closure that acts like a predicate that is checked and may be modified
     /// like a compare_exchange or other similar case
     /// ```
-    /// use parallel_task::utils::SpinBackoff;
+    /// use parallel_task::utils::SpinWait;
     /// let mut val = 0;
     /// let predicate = || { val +=1; print!(" {}",val); val < 10 };
-    /// SpinBackoff::loop_while_mut(predicate);
+    /// SpinWait::loop_while_mut(predicate);
     /// assert_eq!(val,10);
     /// ```
     pub fn loop_while_mut<F>(mut predicate:F)

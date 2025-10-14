@@ -1,6 +1,6 @@
 use std::sync::{mpsc::{Receiver, Sender}, Arc, RwLock};
 
-use crate::{accessors::read_accessor::{ReadAccessor, SecondaryAccessor}, push_workers::worker_thread::{CMesg, Coordination, MessageValue, ThreadMesg, ThreadShare, ThreadState}};
+use crate::{accessors::read_accessor::{ReadAccessor, SecondaryAccessor}, push_workers::worker_thread::{CMesg, Coordination, MessageValue, ThreadMesg, ThreadShare, ThreadState}, utils::SpinWait};
 
 pub struct ThreadRunner<F,V,T> 
 where T:Send,
@@ -38,19 +38,14 @@ F:Fn(V) -> T {
 
     }    
 
-    fn process(&self, receipt:CMesg<V>, final_values:&mut Vec<T>, processed:&mut usize,
-    fread: &std::sync::RwLockReadGuard<'_, F>) 
+    fn process(&self, final_values:&mut Vec<T>, processed:&mut usize, fread: &std::sync::RwLockReadGuard<'_, F>) 
     {
-        if let Some(values) = receipt.msg {                                                                    
-            if let MessageValue::Queue(values) = values {                 
-                *processed += values.len();
-                _ = self.secondary_q.replace(values);               
-                while let Some(value) = self.secondary_q.pop() {                                        
+        SpinWait::loop_while_mut(||self.secondary_q.is_empty());
+        *processed += self.secondary_q.len();
+        while let Some(value) = self.secondary_q.pop() {                                        
                     final_values.push(fread(value));
-                }                                                              
-                _ = self.sender.send(ThreadMesg::Free(self.pos, std::time::Instant::now()));                                                                                                                              
-            }                            
-        }
+        }                                                              
+        _ = self.sender.send(ThreadMesg::Free(self.pos, std::time::Instant::now()));                                                                                                                                      
     }
 
     pub fn run(&mut self) -> Vec<T> {
@@ -78,7 +73,7 @@ F:Fn(V) -> T {
                     Coordination::Run => {                                  
                         waittime += wait_tm_instant.elapsed().as_nanos();            
                         let processing = std::time::Instant::now();
-                        self.process(receipt, &mut final_values, &mut processed, &fread);
+                        self.process(&mut final_values, &mut processed, &fread);
                         processtime += processing.elapsed().as_nanos();                                
                         wait_tm_instant = std::time::Instant::now();                                               
                     },

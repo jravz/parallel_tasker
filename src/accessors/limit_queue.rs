@@ -54,8 +54,8 @@ impl<T> LimitAccessQueue<T>
                 None
             } 
             else {
-                let halflen = s.val.len() / 2;
-                let res = s.val.split_off(halflen);
+                let halflen = s.val.len() / 2;   
+                let res = s.val.drain(0..halflen).collect::<Vec<T>>();          
                 Some(res)            
             }            
         })                      

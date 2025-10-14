@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use tokio::time::Duration;
+use std::time::Duration;
 use rayon::prelude::*;
 use parallel_task::prelude::{ParallelIter,ParallelMapIter,IntoParallelIter};
 

@@ -1,6 +1,6 @@
 use parallel_task::prelude::{IntoParallelIter, ParallelIter, ParallelMapIter};
 use rayon::prelude::*;
-use tokio::time::Duration;
+use std::time::Duration;
 
 
 // Run 100,000 jobs across three use cases:

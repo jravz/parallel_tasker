@@ -1,6 +1,6 @@
 use std::sync::{mpsc::{Receiver, Sender}, Arc, RwLock};
 
-use crate::{accessors::limit_queue::ReadAccessor, push_workers::worker_thread::{CMesg, Coordination, MessageValue, ThreadMesg, ThreadShare, ThreadState}};
+use crate::{accessors::read_accessor::{ReadAccessor, SecondaryAccessor}, push_workers::worker_thread::{CMesg, Coordination, MessageValue, ThreadMesg, ThreadShare, ThreadState}};
 
 pub struct ThreadRunner<F,V,T> 
 where T:Send,
@@ -12,7 +12,7 @@ F:Fn(V) -> T
     sender:Sender<ThreadMesg>, 
     pos:usize, 
     f:Arc<RwLock<F>>,
-    secondary_q:ReadAccessor<V>,
+    secondary_q:SecondaryAccessor<V>,
     buf_size: usize
 }
 
@@ -22,7 +22,7 @@ V:Send,
 F:Fn(V) -> T {
 
     pub fn new(receiver:Receiver<CMesg<V>>, thread_state:Arc<RwLock<ThreadShare<V>>>,
-        sender:Sender<ThreadMesg>, pos:usize, buf_size:usize, secondary_q:ReadAccessor<V>, 
+        sender:Sender<ThreadMesg>, pos:usize, buf_size:usize, secondary_q:SecondaryAccessor<V>, 
         f:Arc<RwLock<F>>) -> Self 
     {
 
@@ -41,19 +41,13 @@ F:Fn(V) -> T {
     fn process(&self, receipt:CMesg<V>, final_values:&mut Vec<T>, processed:&mut usize,
     fread: &std::sync::RwLockReadGuard<'_, F>) 
     {
-        if let Some(values) = receipt.msg {                                                        
-            let mut writer = self.thread_state.write().unwrap(); 
-            writer.state = ThreadState::Busy;
-            drop(writer);
-            if let MessageValue::Queue(values) = values { 
+        if let Some(values) = receipt.msg {                                                                    
+            if let MessageValue::Queue(values) = values {                 
                 *processed += values.len();
-                _ = self.secondary_q.replace(values);
-                while let Some(value) = self.secondary_q.pop() {                    
+                _ = self.secondary_q.replace(values);               
+                while let Some(value) = self.secondary_q.pop() {                                        
                     final_values.push(fread(value));
-                }                                              
-                let mut writer = self.thread_state.write().unwrap();                                 
-                writer.state = ThreadState::Done;
-                drop(writer);  
+                }                                                              
                 _ = self.sender.send(ThreadMesg::Free(self.pos, std::time::Instant::now()));                                                                                                                              
             }                            
         }

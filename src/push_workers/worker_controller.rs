@@ -1,8 +1,10 @@
 use std::collections::VecDeque;
+use std::os::unix::thread;
 use std::sync::{Arc, RwLock};
 use std::thread::Scope;
 use std::sync::mpsc::{channel as async_channel, Receiver, Sender, TrySendError};
 
+use crate::accessors::read_accessor::ReadAccessor;
 use crate::collector::Collector;
 use crate::errors::WorkThreadError;
 use crate::prelude::AtomicIterator;
@@ -13,6 +15,20 @@ use super::worker_thread::{CMesg, Coordination, WorkerThread};
 // With 2 queues, the thread always has a backup to work on and does not wait
 const BUF_SIZE_CHANNEL:usize = 1;
 const INITIAL_WORKERS:usize = 1;
+
+//function to read the iterator in parallel
+// struct ParallelQueueCreate<I,V> 
+// where I:AtomicIterator<AtomicItem=V>
+// {
+//     obj: ReadAccessor<Vec<V>>,
+//     iterator:AtomicIterIngestor<I>
+// }
+
+// impl<V> ParallelQueueCreate<V> {
+
+//     pub fn new(iter:I) -> 
+
+// }
 
 pub struct WorkerController<F,V,T,I> 
 where F: Fn(V) -> T + Send + Sync,
@@ -52,8 +68,8 @@ I:AtomicIterator<AtomicItem = V> + Send + Sized
 
     fn next_task(&mut self) -> Option<CMesg<V>> {
         
-        let vec = self.values.atomic_pull(); 
-        vec.map(CMesg::run_task)                                          
+        let opt_vec = self.values.atomic_pull(); 
+        opt_vec.map(CMesg::run_task)                                          
     }
 
     fn add_thread<'scope,'env>(&mut self, scope:&'scope std::thread::Scope<'scope, 'env>, threads:&mut Vec<ThreadInfo<'scope,T,V>>) -> Result<(),WorkThreadError>
@@ -74,6 +90,7 @@ I:AtomicIterator<AtomicItem = V> + Send + Sized
         }                              
     }
 
+
     pub fn run<C>(&mut self) -> Result<C,WorkThreadError>
     where C: Collector<T>,    
     {                        
@@ -83,44 +100,49 @@ I:AtomicIterator<AtomicItem = V> + Send + Sized
             |s: &Scope<'_, '_>| {                   
                 let mut results = C::initialize();           
                 let mut threads:Vec<ThreadInfo<'_,T,V>> =Vec::new();                                                                                                                                                     
-                
+                                                                                                                                                                                   
+                let mut free_threads:VecDeque<usize> = VecDeque::new();                
+                let mut task:CMesg<V> = self.next_task().unwrap_or(CMesg::done());                                                            
                 // Generate initial worker threads as you need at least 1 by default. Record control time
                 let tm = std::time::Instant::now();   
-                for _ in 0..INITIAL_WORKERS {
-                    self.add_thread(s, &mut threads)?;                   
-                }                                                                                                            
-                let mut control_time = tm.elapsed().as_nanos();                          
-                                
-                let mut task:CMesg<V> = self.next_task().unwrap_or(CMesg::done());                                                            
-                           
-                let mut process_time = std::time::Instant::now(); 
-                let mut elapsed_monitored_time = 0;
-
-                let mut free_threads:VecDeque<usize> = VecDeque::new();
-
-                loop {                                                                                                              
-                    if let Ok(ThreadMesg::Free(pos, _)) = self.all_receiver.try_recv() {                                                 
-                        elapsed_monitored_time = process_time.elapsed().as_nanos();                        
-                        process_time = std::time::Instant::now();                      
-                        
-                        let thread= &mut threads[pos];                        
-                        
+                for idx in 0..INITIAL_WORKERS {
+                    self.add_thread(s, &mut threads)?;
+                    let thread = &mut threads[idx];
+                    task = if let Some((task,_)) = self.send_task(thread,  task) {                                
+                        task
+                    } else {
+                        CMesg::done()
+                    };                   
+                }
+                let mut control_time = tm.elapsed().as_nanos();   
+                let mut process_time = std::time::Instant::now();                                           
+                loop {                                                                                                                                  
+                    if let Ok(ThreadMesg::Free(pos, _)) = self.all_receiver.try_recv() {                                                                                                                         
+                        process_time = std::time::Instant::now();
+                        // for thread in &mut threads {
+                        //     print!(" {}: {}",thread.pos(),thread.primary_q.len());
+                        // }    
+                        // println!("");                                                
+                        let thread= &mut threads[pos];                                                                        
                         task = if let Some((task,_)) = self.send_task(thread,  task) {                                
                             task
-                        } else {
-                            free_threads.push_back(pos);
+                        } else {                            
                             break;
-                        };                                                                                               
+                        };                                                                                                                       
                     } 
- 
-                    if threads.len() < max_threads && elapsed_monitored_time as f64 > control_time as f64  { 
-                        
+                                        
+                    if threads.len() < max_threads && 
+                    process_time.elapsed().as_nanos() as f64 > control_time as f64 &&
+                    self.no_thread_empty(&mut threads)
+                    {                         
+                        process_time = std::time::Instant::now();                   
                         let tm = std::time::Instant::now();
                         self.add_thread(s, &mut threads)?;                                                    
                         control_time = tm.elapsed().as_nanos();                                
                     }                                                                                                                                                                                                                                                           
                 }
-                                              
+
+                // println!("Threads = {}",threads.len());                      
                 if threads.len() > 2 {
                     let mut task:Option<CMesg<V>> = None;
                     let mut min_rate_change:f64;
@@ -130,38 +152,66 @@ I:AtomicIterator<AtomicItem = V> + Send + Sized
                     .collect::<Vec<(usize,f64)>>();
                     loop {                                         
                         if task.is_none() {
+                            // println!("None Task");
                             min_rate_change = 1.0;
                             maxpos = -1;
                             let mut maxlen:usize = 0;
-                            for (pos,thread) in &mut threads.iter_mut().enumerate() {
+                            let mut rate_change_array:Vec<f64> = Vec::new();
+                            for (pos,thread) in &mut threads.iter_mut().enumerate() {                                
                                 let currlen = thread.primary_q.len();
                                 let (lastlen, _rate_of_change) = jobstatus[pos];                            
                                 let curr_rate_change = if (lastlen == 0) || (lastlen < currlen) { 1.0 } else { (lastlen - currlen) as f64 / lastlen as f64 };                                                        
                                 jobstatus[pos] = (currlen,curr_rate_change);
-
-                                if curr_rate_change < min_rate_change  && currlen > 0 &&  currlen > maxlen {
-                                    // print!(" ({}::{}) ",pos,curr_rate_change);
+                                rate_change_array.push(curr_rate_change);
+                                // // print!(" ({}::{}::{}) ",pos,currlen, curr_rate_change);
+                                if curr_rate_change < min_rate_change  && currlen > 0 &&  currlen > maxlen {                                    
                                     maxpos = pos as isize;
                                     min_rate_change = curr_rate_change;
                                     maxlen = currlen;
                                 }                           
                             }
 
+                            // println!("rate_change_array:{:?}",rate_change_array);
+                            // println!("job sta:{:?}",jobstatus);
+                            // let mut outlier_values = crate::utils::lower_leg_values_outside_central_interval(&rate_change_array,0.70);
+                            // if !outlier_values.is_empty() {
+                            //     print!(" Outliers: {:?} ",outlier_values);
+                            //     if let Some((pos,_))= outlier_values.pop() {
+                            //         println!("pos = {}",pos);
+                            //         maxpos = pos as isize;
+                            //     }                                
+                            // } else {
+                            //     let status = jobstatus.iter().enumerate().filter_map(|(pos,val)| {if val.1 > 0.0 {Some(pos)} else {None}})
+                            //     .collect::<Vec<usize>>();
+
+                            //    if status.len() > 1 {
+                            //     maxpos = status[0] as isize;
+                            //    }
+                            // }
+
+                            // if !free_threads.is_empty() {
+                            //     println!(" State: ({}::{}::{}) ",maxpos,maxlen, min_rate_change);
+                            // }
+
                             if maxpos == -1 { 
                                 // println!("No max available");
-                                break; }
+                                break; 
+                            }
 
                             if let Some(pending) = threads[maxpos as usize].primary_q.steal_half() {
                                 // println!("Out: {}->Len:{}",maxpos,pending.len());
+                                // println!("Free: {:?}",free_threads);
                                 task = Some(CMesg::run_task(pending));                                                     
-                            } else {
-                                // println!("Steal failed: ");
-                            }
+                            } 
                         }                    
 
-                        if task.is_some() {                        
+                        if task.is_some() {                                                 
                             if let Some(free_pos) = free_threads.pop_front() {
-                                if free_pos != maxpos as usize {
+                                // for thread in &mut threads {
+                                //     print!(" {}: {}",thread.pos(),thread.primary_q.len());
+                                // }    
+                                // println!(" free: {}, max:{}",free_pos,maxpos); 
+                                // if free_pos != maxpos as usize {
                                     let new_task = task.unwrap();
                                     let free_thread = &mut threads[free_pos];                            
                                     if let Err(fail_task) = self.send_leaked_task(free_thread, new_task) {
@@ -171,10 +221,10 @@ I:AtomicIterator<AtomicItem = V> + Send + Sized
                                         // println!("Success: From:{} To:{}",maxpos,free_pos);                                        
                                         task = None;
                                     }
-                                } else {
-                                    // println!("Retry:From:{} To:{}",maxpos,free_pos);
-                                    free_threads.push_back(free_pos);
-                                }
+                                // } else {
+                                //     // println!("Retry:From:{} To:{}",maxpos,free_pos);
+                                //     free_threads.push_back(free_pos);
+                                // }
                                 
                             }
                         } else {
@@ -183,7 +233,7 @@ I:AtomicIterator<AtomicItem = V> + Send + Sized
 
                         // Get the next free thread
                         while let Ok(msg) = self.all_receiver.try_recv() {
-                            if let ThreadMesg::Free(pos, _) = msg {   
+                            if let ThreadMesg::Free(pos, _) = msg {                                   
                                 // println!("Freed:{}",pos); 
                                 // if !ignore_threads[pos] {
                                     free_threads.push_back(pos);  
@@ -209,11 +259,21 @@ I:AtomicIterator<AtomicItem = V> + Send + Sized
         )        
     }
 
+    fn no_thread_empty<'scope>(&mut self, threads:&mut Vec<WorkerThread<'scope, V,T>>) -> bool {
+        
+        for thread in threads {
+            if thread.primary_q.is_empty() {
+                return false;
+            }
+        }
+        true
+    }
+
     fn send_leaked_task<'scope>(&mut self, thread:&mut WorkerThread<'scope, V,T>, task:CMesg<V>) -> Result<(),CMesg<V>>
     where V: Send + Sync + 'scope,
     T: Send + Sync + 'scope,    
     I:AtomicIterator<AtomicItem = V> + Send + Sized 
-    { 
+    {                 
         if let Err(TrySendError::Full(e)) = thread.try_send(task) {
             return Err(e);
         };

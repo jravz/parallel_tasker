@@ -1,16 +1,16 @@
 use std::{any::Any, error::Error, sync::{mpsc::{sync_channel, Receiver, Sender, SyncSender}, Arc, RwLock}, time::Instant};
 
-use crate::{accessors::limit_queue::{self, ReadAccessor}, push_workers::thread_runner::ThreadRunner};
+use crate::{accessors::{limit_queue, read_accessor::{PrimaryAccessor, ReadAccessor, SecondaryAccessor}}, push_workers::thread_runner::ThreadRunner};
 
 pub enum ThreadMesg {
     Free(usize,Instant),
     Stopped(usize,Instant),
-    Time(usize, u128),
+    Time(usize, u128), 
     Quantity(usize, usize)    
 }
 
 #[repr(u8)]
-#[derive(Clone)]
+#[derive(Clone,Debug)]
 pub enum Coordination
 {
     Run=0,
@@ -24,13 +24,13 @@ pub enum Coordination
     Processed=8
 }
 
-#[derive(Clone)]
+#[derive(Clone,Debug)]
 pub enum MessageValue<V> {
     Queue(Vec<V>),
     Text(String)
 }
 
-#[derive(Clone)]
+#[derive(Clone,Debug)]
 pub struct CMesg<V>
 where V:Send 
 {
@@ -93,7 +93,7 @@ where V:Send
     pub state:Arc<RwLock<ThreadShare<V>>>,
     pos: usize,
     sender: SyncSender<CMesg<V>>,
-    pub primary_q:ReadAccessor<V>,
+    pub primary_q:PrimaryAccessor<V>,
     buf_size: usize
 }
 
@@ -166,7 +166,7 @@ V:Send + Sync + 'scope
 
     fn task_loop<F>(receiver:Receiver<CMesg<V>>, thread_state:Arc<RwLock<ThreadShare<V>>>,
                     sender:Sender<ThreadMesg>, pos:usize, buf_size:usize, 
-                    secondary_q:ReadAccessor<V>, f:Arc<RwLock<F>>) -> Vec<T>
+                    secondary_q:SecondaryAccessor<V>, f:Arc<RwLock<F>>) -> Vec<T>
     where T:Send,
     V:Send,
     F:Fn(V) -> T

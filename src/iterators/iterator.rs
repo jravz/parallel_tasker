@@ -66,14 +66,6 @@ pub trait AtomicIterator {
     fn atomic_next(&mut self) -> Option<Self::AtomicItem>;
     fn atomic_pull(&mut self) -> Option<Vec<Self::AtomicItem>>;
     fn len(&self) -> Option<usize>;
-    /// create a shareable iterator for safe access across threads without
-    /// any overlaps
-    fn shareable(self) -> Arc<ShareableAtomicIter<Self>> 
-    where Self:Sized
-    {
-        Arc::new(ShareableAtomicIter::new(self))
-    }
-
     ///tests whether the iterator is still active with values still available
     /// to be pulled
     fn is_active(&self) -> bool;
@@ -101,58 +93,59 @@ where DiscQ:DiscreteQueue<Output = T>,
     }
 }
 
-/// ShareableAtomicIter enables Vec and HashMap that implement the 
-/// Fetch trait to easily distributed across threads. Values can be safely
-/// accessed without any risk of overlaps. Thus allowing you to design how you 
-/// wish to process these collections across your threads
-/// ```
-/// use parallel_task::prelude::*;
-/// 
-/// // Test out the AtomicIterator for parallel management of Vectors without risk of overlaps
-///    let values = (0..100).collect::<Vec<_>>();
-///    std::thread::scope(|s| 
-///    {
-///      let shared_vec = values.into_parallel_iter().shareable();
-///      let share_clone = shared_vec.clone();
-///      s.spawn(move || {
-///         let tid = std::thread::current().id();
-///         while let Some(val) = shared_vec.next(){
-///             print!(" [{:?}: {}] ",tid,val);
-///         }
-///         });
-///      s.spawn(move || {
-///         let tid = std::thread::current().id();
-///         while let Some(val) = share_clone.next(){
-///             print!(" [{:?}: {}] ",tid,val);
-///         }
-///         });
-///      }
-/// );
-/// ```
-pub struct ShareableAtomicIter<T> 
-where T: AtomicIterator
-{
-    ptr: AtomicPtr<T>
-}
+// PLACEHOLDER FOR PREVIOUS CONCEPT of ShareableAtomicIter
+// /// ShareableAtomicIter enables Vec and HashMap that implement the 
+// /// Fetch trait to easily distributed across threads. Values can be safely
+// /// accessed without any risk of overlaps. Thus allowing you to design how you 
+// /// wish to process these collections across your threads
+// /// ```
+// /// use parallel_task::prelude::*;
+// /// 
+// /// // Test out the AtomicIterator for parallel management of Vectors without risk of overlaps
+// ///    let values = (0..100).collect::<Vec<_>>();
+// ///    std::thread::scope(|s| 
+// ///    {
+// ///      let shared_vec = values.into_parallel_iter().shareable();
+// ///      let share_clone = shared_vec.clone();
+// ///      s.spawn(move || {
+// ///         let tid = std::thread::current().id();
+// ///         while let Some(val) = shared_vec.next(){
+// ///             print!(" [{:?}: {}] ",tid,val);
+// ///         }
+// ///         });
+// ///      s.spawn(move || {
+// ///         let tid = std::thread::current().id();
+// ///         while let Some(val) = share_clone.next(){
+// ///             print!(" [{:?}: {}] ",tid,val);
+// ///         }
+// ///         });
+// ///      }
+// /// );
+// /// ```
+// pub struct ShareableAtomicIter<T> 
+// where T: AtomicIterator
+// {
+//     ptr: AtomicPtr<T>
+// }
 
-impl<T> ShareableAtomicIter<T> 
-where T: AtomicIterator {
+// impl<T> ShareableAtomicIter<T> 
+// where T: AtomicIterator {
 
-    pub fn new(val:T) -> Self {
+//     pub fn new(val:T) -> Self {
 
-        let ptr = Box::into_raw(Box::new(val));
+//         let ptr = Box::into_raw(Box::new(val));
 
-        ShareableAtomicIter {
-            ptr: AtomicPtr::new(ptr)
-        }
-    }
+//         ShareableAtomicIter {
+//             ptr: AtomicPtr::new(ptr)
+//         }
+//     }
 
-    pub fn next(&self) -> Option<<T as AtomicIterator>::AtomicItem> {
-        unsafe {
-            if let Some(mutable) = self.ptr.load(std::sync::atomic::Ordering::Acquire).as_mut() {
-                return mutable.atomic_next();
-            };
-        }        
-        None
-    }
-}
+//     pub fn next(&self) -> Option<<T as AtomicIterator>::AtomicItem> {
+//         unsafe {
+//             if let Some(mutable) = self.ptr.load(std::sync::atomic::Ordering::Acquire).as_mut() {
+//                 return mutable.atomic_next();
+//             };
+//         }        
+//         None
+//     }
+// }

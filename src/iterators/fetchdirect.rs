@@ -107,7 +107,7 @@ impl<T> DiscreteQueue for FetchDirect<T> {
     }
 
     fn len(&self) -> Option<usize> {
-        Some(self.len)
+        Some(self.vec.len())
     }
 }
 
@@ -178,6 +178,6 @@ impl<'data, T> DiscreteQueue for FetchInDirect<'data, T> {
     }
 
     fn len(&self) -> Option<usize> {
-        Some(self.len)
+        Some(self.len())
     }
 }

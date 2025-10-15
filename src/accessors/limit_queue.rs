@@ -2,29 +2,42 @@ use crate::utils::SpinWait;
 use super::read_accessor::*;
 use std::sync::{atomic::AtomicBool, Arc};
 
-pub struct LimitAccessQueue<T> {
+pub struct LimitAccessQueue<T,State> {
     pub val: Vec<T>,    
-    write_block: AtomicBool
+    write_block: AtomicBool,
+    state: State
 }
 
 #[allow(dead_code,clippy::new_ret_no_self)]
-impl<T> LimitAccessQueue<T> 
+impl<T,State> LimitAccessQueue<T,State> 
+where State: Default + Clone
 {
-    pub fn new() -> (PrimaryAccessor<T>,SecondaryAccessor<T>) {
+    pub fn new() -> (PrimaryAccessor<T,State>,SecondaryAccessor<T,State>) {
         let arc_obj = Arc::new(Self {
             val: Vec::new(),            
-            write_block: AtomicBool::new(false)
+            write_block: AtomicBool::new(false),            
+            state: State::default()            
         });        
         
         //we need to ensure the object within AtomicPtr survives on the heap and beyond
-        //the function stack. 
-        // let obj_ptr = Box::into_raw(obj);
-        // let arc_obj: Arc<LimitAccessQueue<T>> = Arc::new(obj);            
+        //the function stack.                   
         let primary = ReadAccessor::new(arc_obj.clone(),ReadAccessorType::Primary);
         let secondary = ReadAccessor::new(arc_obj,ReadAccessorType::Secondary);             
         (PrimaryAccessor::new(primary), SecondaryAccessor::new(secondary))
                      
        
+    }
+
+    pub fn set_state(&mut self, state:State) {
+        self.with_write_block(|s|{
+            s.state = state;
+        });
+    }
+
+    pub fn get_state(&mut self) -> State {
+        self.with_write_block(|s|{
+            s.state.clone()
+        })
     }
 
     pub fn pop(&mut self) -> Option<T> {

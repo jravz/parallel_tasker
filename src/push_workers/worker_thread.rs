@@ -1,6 +1,6 @@
 use std::{any::Any, error::Error, sync::{mpsc::{sync_channel, Receiver, Sender, SyncSender}, Arc, RwLock}, time::Instant};
 
-use crate::{accessors::{limit_queue, read_accessor::{PrimaryAccessor, ReadAccessor, SecondaryAccessor}}, push_workers::thread_runner::ThreadRunner};
+use crate::{accessors::{limit_queue, read_accessor::{PrimaryAccessor, ReadAccessor, SecondaryAccessor}}, push_workers::thread_runner::ThreadRunner, utils::SpinWait};
 
 pub enum ThreadMesg {
     Free(usize,Instant),
@@ -10,18 +10,24 @@ pub enum ThreadMesg {
 }
 
 #[repr(u8)]
-#[derive(Clone,Debug)]
+#[derive(Clone,Debug,PartialEq)]
 pub enum Coordination
 {
-    Run=0,
+    Waiting=0,
     Park=1,
     Done=2,
     Unwind=3,
     Panic=4,
     Ignore=5,
     ProcessTime=6,
-    WaitTime=7,
+    Run=7,
     Processed=8
+}
+
+impl Default for Coordination {
+    fn default() -> Self {
+        Coordination::Waiting
+    }
 }
 
 #[derive(Clone,Debug)]
@@ -47,7 +53,7 @@ where V:Send  {
         }
     }
 
-    pub fn run_task(values:Vec<V>) -> Self {
+    pub fn run_task() -> Self {
         Self {
             msgtype: Coordination::Run,
             msg: None
@@ -94,7 +100,7 @@ where V:Send
     pub state:Arc<RwLock<ThreadShare<V>>>,
     pos: usize,
     sender: SyncSender<CMesg<V>>,
-    pub primary_q:PrimaryAccessor<V>,
+    pub primary_q:PrimaryAccessor<V,Coordination>,
     buf_size: usize
 }
 
@@ -114,7 +120,7 @@ V:Send + Sync + 'scope
         let state_clone: Arc<RwLock<ThreadShare<V>>> = thread_state.clone();
         let (sender, receiver) = sync_channel::<CMesg<V>>(buf_size);
 
-        let (primary_q, secondary_q) = limit_queue::LimitAccessQueue::<V>::new();
+        let (primary_q, secondary_q) = limit_queue::LimitAccessQueue::<V,Coordination>::new();
 
         match std::thread::Builder
         ::new()
@@ -142,6 +148,10 @@ V:Send + Sync + 'scope
         &self.name
     }
 
+    pub fn signal(&mut self, state:Coordination) {
+        self.primary_q.set_state(state);
+    }
+
     pub fn send(&mut self, task:CMesg<V>) -> Result<(), std::sync::mpsc::SendError<CMesg<V>>> {
         self.sender.send(task)
     }
@@ -159,15 +169,16 @@ V:Send + Sync + 'scope
         .iter().for_each(|t| t.thread().unpark());
     }
 
-    fn done(&mut self) -> Result<(), std::sync::mpsc::SendError<CMesg<V>>> {
-        self.send(
-            CMesg { msgtype: Coordination::Done, msg: None }
-        )
+    fn done(&mut self) {
+        // println!("Get state for : {} - {:?}",self.pos, self.primary_q.state());
+        
+        SpinWait::loop_while_mut(||!self.primary_q.is_empty() || (self.primary_q.state() != Coordination::Waiting));        
+        self.primary_q.set_state(Coordination::Done);
     }    
 
     fn task_loop<F>(receiver:Receiver<CMesg<V>>, thread_state:Arc<RwLock<ThreadShare<V>>>,
                     sender:Sender<ThreadMesg>, pos:usize, buf_size:usize, 
-                    secondary_q:SecondaryAccessor<V>, f:Arc<RwLock<F>>) -> Vec<T>
+                    secondary_q:SecondaryAccessor<V,Coordination>, f:Arc<RwLock<F>>) -> Vec<T>
     where T:Send,
     V:Send,
     F:Fn(V) -> T
@@ -184,9 +195,12 @@ V:Send + Sync + 'scope
     pub fn join(mut self) -> Result<Vec<T>, Box<dyn Any + Send + 'static>> 
     where V:Send + Sync + 'scope,
     {
-        while self.done().is_err() {
-        }
-        self.thread.unwrap().join()   
+        // println!("Start Done for : {}",self.pos);
+        self.done();
+        // println!("Finished Done for : {} - {:?}",self.pos, self.primary_q.state());
+        self.thread.unwrap().join()
+        // println!("got res for {}",self.pos);
+        // res
 
     }
 

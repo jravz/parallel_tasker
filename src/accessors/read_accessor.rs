@@ -8,23 +8,23 @@ use crate::{accessors::limit_queue::LimitAccessQueue, utils::SpinWait};
 macro_rules! readaccessorref {
     ($($RdAc:ident),*) => {
         $(  
-            pub struct $RdAc<T>(ReadAccessor<T>);
+            pub struct $RdAc<T,State>(ReadAccessor<T,State>);
 
-            impl<T> $RdAc<T> {
-                pub fn new(obj:ReadAccessor<T>) -> Self {
+            impl<T,State> $RdAc<T,State> {
+                pub fn new(obj:ReadAccessor<T,State>) -> Self {
                     Self(obj)
                 }
             } 
 
-            impl<T> Deref for $RdAc<T> {
-                type Target = ReadAccessor<T>;
+            impl<T,State> Deref for $RdAc<T,State> {
+                type Target = ReadAccessor<T,State>;
 
                 fn deref(&self) -> &Self::Target {
                     &self.0
                 }
             }
 
-            impl<T> DerefMut for $RdAc<T> {    
+            impl<T,State> DerefMut for $RdAc<T,State> {    
             
                 fn deref_mut(&mut self) -> &mut Self::Target {
                     &mut self.0
@@ -41,14 +41,14 @@ readaccessorref!(PrimaryAccessor, SecondaryAccessor);
 /// when the drop is called.
 /// QueuePtr is purposefully kept private and inaccessible. Using Deref and DerefMut the access to the same is disguised
 /// within the ReaderAccessors.
-struct QueuePtr<T> {
-    ptr:Arc<AtomicPtr<LimitAccessQueue<T>>>,
+struct QueuePtr<T,State> {
+    ptr:Arc<AtomicPtr<LimitAccessQueue<T,State>>>,
     #[allow(dead_code)]
-    owner:Arc<LimitAccessQueue<T>>
+    owner:Arc<LimitAccessQueue<T,State>>
 }
 
-impl<T> QueuePtr<T> {
-    fn new(ptr:Arc<AtomicPtr<LimitAccessQueue<T>>>, owner:Arc<LimitAccessQueue<T>>) -> Self {
+impl<T,State> QueuePtr<T,State> {
+    fn new(ptr:Arc<AtomicPtr<LimitAccessQueue<T,State>>>, owner:Arc<LimitAccessQueue<T,State>>) -> Self {
         Self {
             ptr,
             owner
@@ -56,22 +56,22 @@ impl<T> QueuePtr<T> {
     }
 }
 
-impl<T> Deref for QueuePtr<T> {
-    type Target = Arc<AtomicPtr<LimitAccessQueue<T>>>;
+impl<T,State> Deref for QueuePtr<T,State> {
+    type Target = Arc<AtomicPtr<LimitAccessQueue<T,State>>>;
 
     fn deref(&self) -> &Self::Target {
         &self.ptr
     }
 }
 
-impl<T> DerefMut for QueuePtr<T> {    
+impl<T,State> DerefMut for QueuePtr<T,State> {    
     
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.ptr
     }
 }
 
-impl<T> Drop for QueuePtr<T> {
+impl<T,State> Drop for QueuePtr<T,State> {
     fn drop(&mut self) {
 
         self.ptr.store(std::ptr::null_mut(), std::sync::atomic::Ordering::Release);
@@ -84,19 +84,19 @@ pub enum ReadAccessorType {
     Secondary
 }
 
-//Arc<AtomicPtr<LimitAccessQueue<T>>>
-pub struct ReadAccessor<T> 
+pub struct ReadAccessor<T,State> 
 {
-    val: QueuePtr<T>,
+    val: QueuePtr<T,State>,
     rtype: ReadAccessorType,
 }
 
 #[allow(dead_code)]
-impl<T> ReadAccessor<T> 
+impl<T,State> ReadAccessor<T,State> 
+where State: Clone + Default
 {
-    pub fn new(owner:Arc<LimitAccessQueue<T>>, rtype:ReadAccessorType) -> Self {
-        let arc_ptr = Arc::as_ptr(&owner) as *mut LimitAccessQueue<T>;
-        let obj: Arc<AtomicPtr<LimitAccessQueue<T>>> = Arc::new(AtomicPtr::new(arc_ptr));
+    pub fn new(owner:Arc<LimitAccessQueue<T,State>>, rtype:ReadAccessorType) -> Self {
+        let arc_ptr = Arc::as_ptr(&owner) as *mut LimitAccessQueue<T,State>;
+        let obj = Arc::new(AtomicPtr::new(arc_ptr));
         let val = QueuePtr::new(obj, owner);
         Self {
             val,
@@ -104,7 +104,7 @@ impl<T> ReadAccessor<T>
         }
     }
 
-    fn as_ptr(&self) -> Option<*mut LimitAccessQueue<T>> {        
+    fn as_ptr(&self) -> Option<*mut LimitAccessQueue<T,State>> {        
         let ptr = self.val.load(std::sync::atomic::Ordering::Acquire);
         if ptr.is_null() {
             None
@@ -113,7 +113,7 @@ impl<T> ReadAccessor<T>
         }           
     }
 
-    fn get_ref(&self) -> Option<&LimitAccessQueue<T>> {
+    fn get_ref(&self) -> Option<&LimitAccessQueue<T,State>> {
         unsafe {  
             if let Some(ptr_ref) = self.as_ptr() {
                 let opt_ptr = (ptr_ref).as_ref();
@@ -125,7 +125,7 @@ impl<T> ReadAccessor<T>
         }       
     }
 
-    fn get_mut(&self) -> Option<&mut LimitAccessQueue<T>> {
+    fn get_mut(&self) -> Option<&mut LimitAccessQueue<T,State>> {
         unsafe {  
             if let Some(ptr_ref) = self.as_ptr() {
                 let opt_ptr = (ptr_ref).as_mut();
@@ -138,7 +138,7 @@ impl<T> ReadAccessor<T>
     }
 
     fn within_mutable_block<F,Output>(&self,f:F) -> Option<Output>
-    where F: FnOnce(&mut LimitAccessQueue<T>) -> Option<Output> {
+    where F: FnOnce(&mut LimitAccessQueue<T,State>) -> Option<Output> {
 
         if let Some(ptr) = self.get_mut() {
             f(ptr)                       
@@ -217,6 +217,20 @@ impl<T> ReadAccessor<T>
                 
                 self.within_mutable_block(|l| l.steal_half())               
             }
+        }
+    }
+
+    pub fn set_state(&mut self, state:State) {
+        self.within_mutable_block(|l| 
+            Some(l.set_state(state))
+        );
+    }
+
+    pub fn state(&mut self) -> State {
+        if let Some(state) = self.within_mutable_block(|l| Some(l.get_state())) {
+            state
+        } else {
+            State::default()
         }
     }
     

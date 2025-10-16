@@ -13,27 +13,30 @@ fn hashmap_test() {
     let hashmap_jobs = (0..100_00).map(|i|(i,job)).collect::<HashMap<_,_>>();
 
     let tm = std::time::Instant::now();
-    let _ = hashmap_jobs.parallel_iter().
+    let h1 = hashmap_jobs.parallel_iter().
     map(|(i,job)|job())
     .collect::<Vec<_>>();
     println!("PT - HashMap Iter Task Time elapsed: {} microseconds.",tm.elapsed().as_micros());       
 
     let tm = std::time::Instant::now();
-    let _ = hashmap_jobs.par_iter().
+    let h2 = hashmap_jobs.par_iter().
     map(|(i,job)|job())
     .collect::<Vec<_>>();
     println!("Rayon - HashMap Iter Task Time elapsed: {} microseconds.",tm.elapsed().as_micros());     
 
+    assert_eq!(h1.len(),h2.len());
+
     let hashtemp = hashmap_jobs.clone();
     let tm = std::time::Instant::now();
-    let _ = hashtemp.into_parallel_iter().
+    let h1 = hashtemp.into_parallel_iter().
     map(|(i,job)|job())
     .collect::<Vec<_>>();
     println!("PT - HashMap IntoIter Task Time elapsed: {} microseconds.",tm.elapsed().as_micros());       
 
     let tm = std::time::Instant::now();
-    let _ = hashmap_jobs.into_parallel_iter().
+    let h2 = hashmap_jobs.into_parallel_iter().
     map(|(i,job)|job())
     .collect::<Vec<_>>();
     println!("Rayon - HashMap IntoIter Task Time elapsed: {} microseconds.",tm.elapsed().as_micros());       
+    assert_eq!(h1.len(),h2.len());
 }

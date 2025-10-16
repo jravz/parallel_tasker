@@ -6,7 +6,6 @@ use rayon::prelude::*;
 
 #[derive(Debug,Clone)]
 struct Job {
-    id: usize,
     runtime_us: u64, // microseconds
 }
 
@@ -17,7 +16,7 @@ fn generate_nonstandard_jobs() -> Vec<Job> {
     let mut jobs: Vec<Job> = (0..100)
         .map(|i| {
             let runtime_us = rng.random_range(500..=50_000); // 0.5 ms to 50 ms
-            Job { id: i, runtime_us }
+            Job {runtime_us }
         })
         .collect();
 

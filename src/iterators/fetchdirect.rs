@@ -124,7 +124,7 @@ impl<'data, T> FetchInDirect<'data, T> {
     pub fn new(vec: &'data Vec<T>) -> Self {
         let max_threads = crate::utils::max_threads();
         let len = vec.len();
-        let optimal_q_size = vec.len() / max_threads / QUEUE_SPLIT; 
+        let optimal_q_size = vec.len() / QUEUE_SPLIT; 
         Self {
             vec,
             start:0,

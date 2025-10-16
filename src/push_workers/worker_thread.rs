@@ -1,6 +1,6 @@
-use std::{any::Any, error::Error, sync::{mpsc::{sync_channel, Receiver, Sender, SyncSender}, Arc, RwLock}, time::Instant};
+use std::{any::Any, error::Error, sync::{mpsc::Sender, Arc, RwLock}, time::Instant};
 
-use crate::{accessors::{limit_queue, read_accessor::{PrimaryAccessor, ReadAccessor, SecondaryAccessor}}, push_workers::thread_runner::ThreadRunner, utils::SpinWait};
+use crate::{accessors::{limit_queue, read_accessor::{PrimaryAccessor, SecondaryAccessor}}, push_workers::thread_runner::ThreadRunner, utils::SpinWait};
 
 pub enum ThreadMesg {
     Free(usize,Instant),
@@ -62,32 +62,34 @@ where V:Send  {
     
 }
 
-#[derive(Debug,Clone,PartialEq)]
-#[repr(u8)]
-pub enum ThreadState {
-    New=0,
-    Busy=1,
-    Done=2,
-    Park=3
+pub struct QueueStats {
+    process_time: std::time::Instant,
+    start_queue_len: usize
 }
 
-pub struct ThreadShare<V> {
-    pub state: ThreadState,
-    pub queue:Vec<V>    
-}
-
-impl<V> ThreadShare<V> {
-    pub fn new() -> Self {        
+impl QueueStats {
+    pub fn new(start_queue_len:usize, process_time: std::time::Instant) -> Self {
         Self {
-            state: ThreadState::New, 
-            queue: Vec::new()
+            process_time,
+            start_queue_len
         }
     }
-}
 
-impl<V> Default for ThreadShare<V> {
-    fn default() -> Self {
-        Self::new()
+    pub fn initial_queue_len(&self) -> usize {
+        self.start_queue_len
+    }
+
+    pub fn elapsed_time(&self) -> u128 {
+        self.process_time.elapsed().as_nanos()
+    }
+
+    pub fn time_per_task(&self, curr_len:usize) -> f64 {
+        if self.initial_queue_len() == 0 {
+            1.0
+        } else {
+            self.elapsed_time() as f64 /
+            (self.initial_queue_len() - curr_len) as f64            
+        }
     }
 }
 
@@ -98,8 +100,8 @@ where V:Send
     pub thread:Option<std::thread::ScopedJoinHandle<'scope,Vec<T>>>,
     pub name:String,    
     pos: usize,    
-    pub primary_q:PrimaryAccessor<V,Coordination>,
-    process_time: std::time::Instant    
+    pub primary_q: PrimaryAccessor<V,Coordination>,
+    queue_stats:  Option<QueueStats>
 }
 
 impl<'scope,V,T> WorkerThread<'scope,V,T> 
@@ -108,7 +110,7 @@ V:Send + Sync + 'scope
 {
 
     pub fn launch<'env,'a,F>(scope: &'scope std::thread::Scope<'scope, 'env>,
-    work_sender:Sender<ThreadMesg>, pos:usize,  f:Arc<RwLock<F>>) -> Result<Self,Box<dyn Error>> 
+    pos:usize,  f:Arc<RwLock<F>>) -> Result<Self,Box<dyn Error>> 
     where 'env: 'scope,    
     V:Send + Sync + 'scope,
     F:Fn(V) -> T + Send + Sync + 'scope
@@ -119,14 +121,14 @@ V:Send + Sync + 'scope
         match std::thread::Builder
         ::new()
         .name(thread_name.clone())
-        .spawn_scoped(scope, move || Self::task_loop(work_sender, pos, secondary_q, f)) {
+        .spawn_scoped(scope, move || Self::task_loop(pos, secondary_q, f)) {
             Ok(scoped_thread) => {
                 let worker = WorkerThread {
                     name:thread_name, 
                     thread: Some(scoped_thread),                    
                     pos,                    
                     primary_q,
-                    process_time: std::time::Instant::now()                                
+                    queue_stats: None                              
                 };
                 Ok(worker)
             }
@@ -152,6 +154,7 @@ V:Send + Sync + 'scope
         if values.is_empty() {
             Err(())
         } else {
+            self.queue_stats = Some(QueueStats::new(values.len(), std::time::Instant::now()));
             self.primary_q.replace(values).map_err(|_|())?;            
             self.signal(Coordination::Run);
             Ok(())
@@ -172,13 +175,12 @@ V:Send + Sync + 'scope
         self.primary_q.set_state(Coordination::Done);
     }    
 
-    fn task_loop<F>(sender:Sender<ThreadMesg>, pos:usize,
-                    secondary_q:SecondaryAccessor<V,Coordination>, f:Arc<RwLock<F>>) -> Vec<T>
+    fn task_loop<F>(pos:usize, secondary_q:SecondaryAccessor<V,Coordination>, f:Arc<RwLock<F>>) -> Vec<T>
     where T:Send,
     V:Send,
     F:Fn(V) -> T
     {   
-        ThreadRunner::new(sender,pos,secondary_q, f)
+        ThreadRunner::new(pos,secondary_q, f)
         .run()
     }
 
@@ -191,14 +193,15 @@ V:Send + Sync + 'scope
 
     pub fn queue_len(&self) -> usize {
         self.primary_q.len()
+    }   
+
+    pub fn get_elapsed_time(&mut self) -> Option<u128> {
+        self.queue_stats.as_ref().map(QueueStats::elapsed_time)
     }
 
-    pub fn set_process_time_now(&mut self) {
-        self.process_time = std::time::Instant::now();
-    }
-
-    pub fn get_elapsed_time(&mut self) -> u128 {
-        self.process_time.elapsed().as_nanos()
+    pub fn time_per_process(&self) -> Option<f64> {
+        self.queue_stats.as_ref().map(|q|
+        q.time_per_task(self.primary_q.len()))        
     }
 
 }

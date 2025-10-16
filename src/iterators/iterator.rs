@@ -1,6 +1,6 @@
 //! AtomicIterator is a trait implementd on ParallelIterator and IntoParallelIterator that both employ 
-//! AtomicQueuedValues to manage exclusive access to values within Vec, HashMap that implement Iterator.
-//! AtomicQueuedValues uses Atomics to ensure that each thread does not get the same value as another thread. Allowing threads to
+//! SizedQueue to manage exclusive access to values within Vec, HashMap that implement Iterator.
+//! SizedQueue uses Atomics to ensure that each thread does not get the same value as another thread. Allowing threads to
 //! access values in the Collection in a mutually exclusive manner.
 
 use std::{marker::PhantomData, sync::{atomic::AtomicPtr, Arc}};
@@ -57,7 +57,7 @@ where DiscQ: DiscreteQueue<Output=T>,
 }
 
 
-/// AtomicIterator trait is applied on the  ParallelIterator that has AtomicQueuedValues 
+/// AtomicIterator trait is applied on the  ParallelIterator that has SizedQueue 
 /// due to which it is able to manage exclusive access for each thread for values within
 /// the implemented Collection type. 
 #[allow(clippy::len_without_is_empty)]

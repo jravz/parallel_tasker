@@ -33,29 +33,29 @@ where Self: 'data
 }
 
 /// Implementation for all HashMap
-impl<'data, K,V> ParallelIter<'data, AtomicQueuedValues<std::collections::hash_map::Iter<'data,K, V>,(&'data K, &'data V)>, (K,V)> for HashMap<K,V>
+impl<'data, K,V> ParallelIter<'data, SizedQueue<(&'data K, &'data V)>,(&'data K, &'data V)> for HashMap<K,V>
 where Self: 'data
 {
     type RefItem = (&'data K, &'data V);       
-    fn parallel_iter(&'data self) -> ParallelIterator<AtomicQueuedValues<std::collections::hash_map::Iter<'data,K, V>,(&'data K, &'data V)>, Self::RefItem>   
+    fn parallel_iter(&'data self) -> ParallelIterator<SizedQueue<(&'data K, &'data V)>, Self::RefItem>   
     {       
         let size = usize::max(self.len() / 100usize,100); 
-        let input = self.iter();  
+        let input = self.iter().collect::<Vec<_>>();  
         let len = self.len();
-        ParallelIterator::new(AtomicQueuedValues::new_with_size(input, size,Some(len)))  
+        ParallelIterator::new(SizedQueue::new_with_size(input, size,Some(len)))  
      }          
 }
 
-impl<'data, K,V> IntoParallelIter<'data,AtomicQueuedValues<std::collections::hash_map::IntoIter<K,V>,(K,V)> ,(K,V)> for HashMap<K,V>
+impl<'data, K,V> IntoParallelIter<'data,SizedQueue<(K, V)>,(K,V)> for HashMap<K,V>
 where Self: 'data
 {
     type IntoItem = (K,V);
     
-    fn into_parallel_iter(self) -> ParallelIterator<AtomicQueuedValues<std::collections::hash_map::IntoIter<K,V>,(K,V)>, Self::IntoItem> {
+    fn into_parallel_iter(self) -> ParallelIterator<SizedQueue<(K, V)>, Self::IntoItem> {
         let size = usize::max(self.len() / 100usize,100); 
         let len = self.len();
-        let input = self.into_iter();          
-        ParallelIterator::new(AtomicQueuedValues::new_with_size(input, size,Some(len))) 
+        let input = self.into_iter().collect::<Vec<_>>();         
+        ParallelIterator::new(SizedQueue::new_with_size(input, size,Some(len))) 
     }       
 }
 
@@ -63,16 +63,16 @@ where Self: 'data
 macro_rules! range_impl {
     {$($T:ty)*} => {
         $(
-            impl<'data> IntoParallelIter<'data,AtomicQueuedValues<std::ops::Range<$T>,$T>,$T> for std::ops::Range<$T>
+            impl<'data> IntoParallelIter<'data,SizedQueue<$T>,$T> for std::ops::Range<$T>
             where Self: 'data
             {
                 type IntoItem = $T;                
                 
-                fn into_parallel_iter(self) -> ParallelIterator<AtomicQueuedValues<std::ops::Range<$T>,$T>, Self::IntoItem> {                    
+                fn into_parallel_iter(self) -> ParallelIterator<SizedQueue<$T>, Self::IntoItem> {                    
                     let len = self.end - self.start;  
                     let size = usize::max(len as usize / 100usize,100);                   
-                    let input = self.into_iter();                      
-                    let x = ParallelIterator::new(AtomicQueuedValues::new_with_size(input, size,Some(len as usize)));                    
+                    let input = self.collect::<Vec<_>>();                      
+                    let x = ParallelIterator::new(SizedQueue::new_with_size(input, size,Some(len as usize)));                    
                     x
                 }       
             }

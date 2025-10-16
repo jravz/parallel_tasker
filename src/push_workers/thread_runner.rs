@@ -1,14 +1,12 @@
-use std::sync::{mpsc::{Receiver, Sender}, Arc, RwLock};
- use chrono::{Local, DateTime};
+use std::sync::{Arc, RwLock};
 
-use crate::{accessors::read_accessor::{ReadAccessor, SecondaryAccessor}, push_workers::worker_thread::{CMesg, Coordination, MessageValue, ThreadMesg, ThreadShare, ThreadState}, utils::SpinWait};
+use crate::{accessors::read_accessor::SecondaryAccessor, push_workers::worker_thread::Coordination, utils::SpinWait};
 
 pub struct ThreadRunner<F,V,T> 
 where T:Send,
 V:Send,
 F:Fn(V) -> T
-{        
-    sender:Sender<ThreadMesg>, 
+{            
     pos:usize, 
     f:Arc<RwLock<F>>,
     secondary_q:SecondaryAccessor<V,Coordination>,    
@@ -19,12 +17,11 @@ where T:Send,
 V:Send,
 F:Fn(V) -> T {
 
-    pub fn new(sender:Sender<ThreadMesg>, pos:usize, secondary_q:SecondaryAccessor<V,Coordination>, 
+    pub fn new(pos:usize, secondary_q:SecondaryAccessor<V,Coordination>, 
         f:Arc<RwLock<F>>) -> Self 
     {
 
-        Self {                        
-            sender,
+        Self {                                    
             pos,
             f,
             secondary_q            

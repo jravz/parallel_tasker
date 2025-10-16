@@ -13,6 +13,7 @@ chrono = "0.4.42"
 statrs = "0.18.0"
 thiserror = "2.0.16"
 rayon = "1.11.0"
+rand = "0.9.2"
 
 [dev-dependencies]
 rand = "0.9.2"

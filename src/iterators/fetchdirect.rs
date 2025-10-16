@@ -2,7 +2,7 @@ use std::{cell::RefCell, mem::MaybeUninit, ops::Range, sync::atomic::{AtomicBool
 
 use crate::iterators::prelude::DiscreteQueue;
 
-const QUEUE_SPLIT:usize = 2;
+const QUEUE_SPLIT:usize = crate::push_workers::worker_controller::INITIAL_WORKERS;
 
 thread_local!(static TASK_QUEUE: RefCell<Range<isize>> = const { RefCell::new(-1..0) });
 
@@ -74,7 +74,7 @@ impl<T> FetchDirect<T> {
     pub fn new(vec:Vec<T>) -> Self {
         let max_threads = crate::utils::max_threads();
         let len = vec.len();
-        let optimal_q_size = vec.len() / max_threads / QUEUE_SPLIT;                    
+        let optimal_q_size = vec.len() / QUEUE_SPLIT;                    
         Self {
             vec,
             queue_size: optimal_q_size,

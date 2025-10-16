@@ -7,14 +7,11 @@ pub struct ThreadRunner<F,V,T>
 where T:Send,
 V:Send,
 F:Fn(V) -> T
-{
-    receiver:Receiver<CMesg<V>>,
-    thread_state:Arc<RwLock<ThreadShare<V>>>,
+{        
     sender:Sender<ThreadMesg>, 
     pos:usize, 
     f:Arc<RwLock<F>>,
-    secondary_q:SecondaryAccessor<V,Coordination>,
-    buf_size: usize
+    secondary_q:SecondaryAccessor<V,Coordination>,    
 }
 
 impl<F,V,T> ThreadRunner<F,V,T> 
@@ -22,19 +19,15 @@ where T:Send,
 V:Send,
 F:Fn(V) -> T {
 
-    pub fn new(receiver:Receiver<CMesg<V>>, thread_state:Arc<RwLock<ThreadShare<V>>>,
-        sender:Sender<ThreadMesg>, pos:usize, buf_size:usize, secondary_q:SecondaryAccessor<V,Coordination>, 
+    pub fn new(sender:Sender<ThreadMesg>, pos:usize, secondary_q:SecondaryAccessor<V,Coordination>, 
         f:Arc<RwLock<F>>) -> Self 
     {
 
-        Self {
-            receiver,
-            thread_state,
+        Self {                        
             sender,
             pos,
             f,
-            secondary_q,
-            buf_size
+            secondary_q            
         }
 
     }    
@@ -52,27 +45,18 @@ F:Fn(V) -> T {
 
     pub fn run(&mut self) -> Vec<T> {
         let mut final_values:Vec<T> = Vec::new();                     
-        let mut processed = 0;
-        let mut waiting_time:u128 = 0;
-        let mut processing_time:u128 = 0;
-        let total_time = std::time::Instant::now();
-        let mut vec_process_start:Vec<String> = Vec::new();
-        let mut vec_wait_start:Vec<String> = Vec::new();
+        let mut processed = 0;      
+        // _= self.sender.send(ThreadMesg::Free(self.pos, std::time::Instant::now()));  
         loop 
         {                                    
             match self.secondary_q.state() {                
                 Coordination::Park => {
                     std::thread::park();
                 },
-                Coordination::Run => {
-                    vec_process_start.push(Local::now().format("%H:%M:%S::%.9f").to_string());
-                    let tm = std::time::Instant::now();                                                    
-                    self.process(&mut final_values, &mut processed);   
-                    processing_time += tm.elapsed().as_nanos(); 
-                    vec_wait_start.push(Local::now().format("%H:%M:%S::%.9f").to_string());                                                                             
+                Coordination::Run => {                                                 
+                    self.process(&mut final_values, &mut processed);                     
                 },
-                Coordination::Done => {    
-                    // println!("Received Done: {}",self.pos);                        
+                Coordination::Done => {                      
                     break;
                 },
                 Coordination::Unwind => {
@@ -81,21 +65,13 @@ F:Fn(V) -> T {
                 Coordination::Panic => {
                     panic!("There was some error.");
                 }, 
-                Coordination::Waiting => {  
-                    let tm = std::time::Instant::now();                  
-                    SpinWait::loop_while_mut(||self.secondary_q.state() == Coordination::Waiting);
-                    waiting_time += tm.elapsed().as_nanos();
+                Coordination::Waiting => {                      
+                    SpinWait::loop_while_mut(||self.secondary_q.state() == Coordination::Waiting);                    
                 }                                             
                 _ => {}
             }            
         }
-        let tot_time = total_time.elapsed().as_nanos();
-        println!("{}: totaltime: {}| processed = {}",self.pos, tot_time,processed);
-        println!("{}: processingtime: {}, % of total:{}%",self.pos, processing_time,((processing_time as f64 /tot_time as f64)*10000.0 as f64).round()/100.0);
-        println!("{}: waitingtime: {}, % of total:{}%",self.pos, waiting_time,((waiting_time as f64 /tot_time as f64)*10000.0 as f64).round()/100.0);                          
-        for idx in 0..vec_process_start.len() {
-            println!("{}: [{}] -- [{}]",self.pos, vec_process_start[idx], vec_wait_start[idx]);
-        }
+        
         final_values       
     }
 

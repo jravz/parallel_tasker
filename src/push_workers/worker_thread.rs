@@ -96,12 +96,10 @@ pub struct WorkerThread<'scope,V,T>
 where V:Send
 {
     pub thread:Option<std::thread::ScopedJoinHandle<'scope,Vec<T>>>,
-    pub name:String,
-    pub state:Arc<RwLock<ThreadShare<V>>>,
-    pos: usize,
-    sender: SyncSender<CMesg<V>>,
+    pub name:String,    
+    pos: usize,    
     pub primary_q:PrimaryAccessor<V,Coordination>,
-    buf_size: usize
+    process_time: std::time::Instant    
 }
 
 impl<'scope,V,T> WorkerThread<'scope,V,T> 
@@ -110,31 +108,25 @@ V:Send + Sync + 'scope
 {
 
     pub fn launch<'env,'a,F>(scope: &'scope std::thread::Scope<'scope, 'env>,
-    work_sender:Sender<ThreadMesg>, pos:usize, buf_size:usize, f:Arc<RwLock<F>>) -> Result<Self,Box<dyn Error>> 
+    work_sender:Sender<ThreadMesg>, pos:usize,  f:Arc<RwLock<F>>) -> Result<Self,Box<dyn Error>> 
     where 'env: 'scope,    
     V:Send + Sync + 'scope,
     F:Fn(V) -> T + Send + Sync + 'scope
     {                
-        let thread_name = format!("T:{}",pos);        
-        let thread_state: Arc<RwLock<ThreadShare<V>>> = Arc::new(RwLock::new(ThreadShare::new()));
-        let state_clone: Arc<RwLock<ThreadShare<V>>> = thread_state.clone();
-        let (sender, receiver) = sync_channel::<CMesg<V>>(buf_size);
-
+        let thread_name = format!("T:{}",pos);                              
         let (primary_q, secondary_q) = limit_queue::LimitAccessQueue::<V,Coordination>::new();
 
         match std::thread::Builder
         ::new()
         .name(thread_name.clone())
-        .spawn_scoped(scope, move || Self::task_loop(receiver,state_clone,work_sender, pos, buf_size, secondary_q, f)) {
+        .spawn_scoped(scope, move || Self::task_loop(work_sender, pos, secondary_q, f)) {
             Ok(scoped_thread) => {
                 let worker = WorkerThread {
                     name:thread_name, 
-                    thread: Some(scoped_thread),
-                    state: thread_state ,
-                    pos,
-                    sender ,
+                    thread: Some(scoped_thread),                    
+                    pos,                    
                     primary_q,
-                    buf_size                   
+                    process_time: std::time::Instant::now()                                
                 };
                 Ok(worker)
             }
@@ -152,12 +144,18 @@ V:Send + Sync + 'scope
         self.primary_q.set_state(state);
     }
 
-    pub fn send(&mut self, task:CMesg<V>) -> Result<(), std::sync::mpsc::SendError<CMesg<V>>> {
-        self.sender.send(task)
+    pub fn is_running(&mut self) -> bool {
+        self.primary_q.state() == Coordination::Run
     }
 
-    pub fn try_send(&mut self, task:CMesg<V>) -> Result<(), std::sync::mpsc::TrySendError<CMesg<V>>> {
-        self.sender.try_send(task)
+    pub fn run(&mut self, values:Vec<V>) -> Result<(), ()> {
+        if values.is_empty() {
+            Err(())
+        } else {
+            self.primary_q.replace(values).map_err(|_|())?;            
+            self.signal(Coordination::Run);
+            Ok(())
+        }        
     }
 
     pub fn pos(&self) -> usize {
@@ -169,40 +167,38 @@ V:Send + Sync + 'scope
         .iter().for_each(|t| t.thread().unpark());
     }
 
-    fn done(&mut self) {
-        // println!("Get state for : {} - {:?}",self.pos, self.primary_q.state());
-        
+    fn done(&mut self) {                
         SpinWait::loop_while_mut(||!self.primary_q.is_empty() || (self.primary_q.state() != Coordination::Waiting));        
         self.primary_q.set_state(Coordination::Done);
     }    
 
-    fn task_loop<F>(receiver:Receiver<CMesg<V>>, thread_state:Arc<RwLock<ThreadShare<V>>>,
-                    sender:Sender<ThreadMesg>, pos:usize, buf_size:usize, 
+    fn task_loop<F>(sender:Sender<ThreadMesg>, pos:usize,
                     secondary_q:SecondaryAccessor<V,Coordination>, f:Arc<RwLock<F>>) -> Vec<T>
     where T:Send,
     V:Send,
     F:Fn(V) -> T
     {   
-        ThreadRunner::new(receiver,thread_state,sender,pos,buf_size,secondary_q, f)
+        ThreadRunner::new(sender,pos,secondary_q, f)
         .run()
-    }
-
-    pub fn state(&self) -> ThreadState {
-        let val = self.state.read().unwrap().state.clone();
-        val        
     }
 
     pub fn join(mut self) -> Result<Vec<T>, Box<dyn Any + Send + 'static>> 
     where V:Send + Sync + 'scope,
-    {
-        // println!("Start Done for : {}",self.pos);
-        self.done();
-        // println!("Finished Done for : {} - {:?}",self.pos, self.primary_q.state());
-        self.thread.unwrap().join()
-        // println!("got res for {}",self.pos);
-        // res
-
+    {        
+        self.done();     
+        self.thread.unwrap().join()                
     }
 
+    pub fn queue_len(&self) -> usize {
+        self.primary_q.len()
+    }
+
+    pub fn set_process_time_now(&mut self) {
+        self.process_time = std::time::Instant::now();
+    }
+
+    pub fn get_elapsed_time(&mut self) -> u128 {
+        self.process_time.elapsed().as_nanos()
+    }
 
 }

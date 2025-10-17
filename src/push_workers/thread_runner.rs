@@ -1,3 +1,6 @@
+//! ThreadRunner is responsible for running the tasks within queue belonging to each thread. It manages the process within a run function that is effectively
+//! a loop. The queue itself is a LimitedAccessQueue with the Secondary Accessor being available here
+
 use std::sync::{Arc, RwLock};
 
 use crate::{accessors::read_accessor::SecondaryAccessor, push_workers::worker_thread::Coordination, utils::SpinWait};

@@ -61,19 +61,16 @@ impl SpinWait {
     }
 
     fn spin_backoff(spins: &mut usize) {
-        static MAX_SPINS: usize = 128;
-        loop {            
-            if *spins < MAX_SPINS {
-                spin_loop(); // tight cpu-friendly pause
-                *spins += 1;                               
-                return;
-            } else {      
-                std::thread::yield_now();                   
-                // std::thread::sleep(Duration::from_nanos(200)); // let OS schedule other threads
-                *spins = *spins / 2;
-                return;
-            }
-        }
+        static MAX_SPINS: usize = 128;                  
+        if *spins < MAX_SPINS {
+            spin_loop(); // tight cpu-friendly pause
+            *spins += 1;                               
+            return;
+        } else {      
+            std::thread::yield_now();                               
+            *spins /= 2; // regress back
+            return;
+        }        
     }
 
 }
@@ -106,14 +103,12 @@ pub fn lower_leg_values_outside_central_interval(data: &[f64], prob: f64) -> Vec
     let lower = mean - z * std;
     // let upper = mean + z * std;
 
-    data.iter().cloned().enumerate().filter(|&(pos,x)| x < lower).collect()
+    data.iter().cloned().enumerate().filter(|&(_,x)| x < lower).collect()
 }
 
 pub fn normal_curve_z_value(prob:f64) -> f64 {
     let normal = Normal::new(0.0, 1.0).unwrap();
 
     // For a central 90% interval, we want the upper tail at (1 + prob) / 2 = 0.95
-    let z = normal.inverse_cdf((1.0 + prob) / 2.0);
-
-    z
+    normal.inverse_cdf((1.0 + prob) / 2.0)    
 }

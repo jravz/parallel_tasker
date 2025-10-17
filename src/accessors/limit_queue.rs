@@ -1,3 +1,4 @@
+//! LimitAccessQueue is where the queue is stored and managed. This may only be accessed via the accessors.
 use crate::utils::SpinWait;
 use super::read_accessor::*;
 use std::sync::{atomic::AtomicBool, Arc};
@@ -61,7 +62,7 @@ where State: Default + Clone
 
     pub fn steal_half(&mut self) -> Option<Vec<T>> {          
         self.with_write_block(|s| {         
-            if s.val.is_empty() {
+            if s.val.is_empty() {                
                 None
             } 
             else {

@@ -13,7 +13,9 @@ Work stealing - Once the main queue is exhausted, a work stealing approach has b
 Work is prioritised based on which thread is making least progress and its jobs are picked and given to a free thread.
 An inhouse concept of LimitedAccessQueue has been employed. This can be accessed only via two ReadAccessors provided at the time of creation - primary and secondary. Only Primary has the ability to steal tasks from the Queue while both may add tasks. WorkerController employs this to redistribute tasks post the main queue being complete. Synchronisation is supported using atomics. This is a very fast queue with limited to no latency. 
 
-This design provides low overhead, minimal contention, and predictable cache-friendly access patterns. Benchmarks show that it performs within ~5% of Rayon for large workloads, such as Monte Carlo simulations with 100,000 iterations, while maintaining a simpler scheduling logic.
+This design provides low overhead, minimal contention, and predictable cache-friendly access patterns. Benchmarks show that it performs within ~5-10% of Rayon for large workloads, such as Monte Carlo simulations with 100,000 iterations, while maintaining a simpler scheduling logic.
+This has been tested via a cargo bench analysis, a sample of which has been shown below.
+![Flow diagram](images/cargo_bench_results.png)
 
 parallel_tasker is a fully usable parallel iterator library for real-world workloads, offering a different perspective on parallelism while maintaining optimal performance as tested in cargo bench.
 

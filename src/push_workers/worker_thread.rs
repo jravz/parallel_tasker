@@ -1,18 +1,18 @@
-use std::{any::Any, error::Error, sync::{mpsc::Sender, Arc, RwLock}, time::Instant};
+//! Individual worker thread that is spawned by the workercontroller and thereon managed by
+//! the thread manager
 
-use crate::{accessors::{limit_queue, read_accessor::{PrimaryAccessor, SecondaryAccessor}}, push_workers::thread_runner::ThreadRunner, utils::SpinWait};
+use std::{any::Any, error::Error, sync::{Arc, RwLock}};
 
-pub enum ThreadMesg {
-    Free(usize,Instant),
-    Stopped(usize,Instant),
-    Time(usize, u128), 
-    Quantity(usize, usize)    
-}
+use crate::{accessors::{limit_queue, read_accessor::{PrimaryAccessor, SecondaryAccessor}}, errors::WorkThreadError, push_workers::thread_runner::ThreadRunner, utils::SpinWait};
 
+
+/// Coordination is used as a State variable by the Primary and Secondary Accessors to manage the 
+/// state of the thread
 #[repr(u8)]
-#[derive(Clone,Debug,PartialEq)]
+#[derive(Clone,Debug,PartialEq,Default)]
 pub enum Coordination
 {
+    #[default]
     Waiting=0,
     Park=1,
     Done=2,
@@ -24,44 +24,9 @@ pub enum Coordination
     Processed=8
 }
 
-impl Default for Coordination {
-    fn default() -> Self {
-        Coordination::Waiting
-    }
-}
 
-#[derive(Clone,Debug)]
-pub enum MessageValue<V> {
-    Queue(Vec<V>),
-    Text(String)
-}
-
-#[derive(Clone,Debug)]
-pub struct CMesg<V>
-where V:Send 
-{
-    pub msgtype: Coordination,
-    pub msg: Option<MessageValue<V>>
-}
-
-impl<V> CMesg<V>
-where V:Send  {
-    pub fn done() -> Self {
-        Self {
-            msgtype: Coordination::Done,
-            msg: None
-        }
-    }
-
-    pub fn run_task() -> Self {
-        Self {
-            msgtype: Coordination::Run,
-            msg: None
-        }
-    }
-    
-}
-
+/// Manage specific stats about the tasks in operation to enable the scheduling algorithm
+/// to take specific decisions
 pub struct QueueStats {
     process_time: std::time::Instant,
     start_queue_len: usize
@@ -83,16 +48,25 @@ impl QueueStats {
         self.process_time.elapsed().as_nanos()
     }
 
+    /// Lets assume the least case. If the queue had 1 task and had been running for 1 microsecond,
+    /// the time elapsed on average for a task is 1microsecond. Now if there were two tasks and the second task has been running for 0.5 microsecond,
+    /// the avg time is 1.5/2 = 0.75 microsecond. The time to finish may be 0.5, but the system conservatively calculates
+    /// as avg time * remaining = 0.75microsecond. This becomes more accurate for 100+ tasks
     pub fn time_per_task(&self, curr_len:usize) -> f64 {
+        self.elapsed_time() as f64 / (self.initial_queue_len() - curr_len + 1) as f64               
+    }
+
+    pub fn ratio_of_tasks_remaining(&self, curr_len:usize) -> f64 {
         if self.initial_queue_len() == 0 {
-            1.0
-        } else {
-            self.elapsed_time() as f64 /
-            (self.initial_queue_len() - curr_len) as f64            
+            return 0.0;
         }
+        curr_len as f64 / self.initial_queue_len() as f64
     }
 }
 
+
+/// Worker thread is launched by the thread manager based on the need discovered by the 
+/// scheduling algorithm within worker controller.
 #[allow(dead_code)]
 pub struct WorkerThread<'scope,V,T> 
 where V:Send
@@ -150,12 +124,13 @@ V:Send + Sync + 'scope
         self.primary_q.state() == Coordination::Run
     }
 
-    pub fn run(&mut self, values:Vec<V>) -> Result<(), ()> {
+    /// Run function runs a new batch of tasks on the thread
+    pub fn run(&mut self, values:Vec<V>) -> Result<(), WorkThreadError> {
         if values.is_empty() {
-            Err(())
+            Err(WorkThreadError::Other("Values within task shared to queue were empty.".to_owned()))
         } else {
             self.queue_stats = Some(QueueStats::new(values.len(), std::time::Instant::now()));
-            self.primary_q.replace(values).map_err(|_|())?;            
+            self.primary_q.replace(values).map_err(|_|WorkThreadError::Other("Unknown error occured.".to_owned()))?;            
             self.signal(Coordination::Run);
             Ok(())
         }        
@@ -202,6 +177,25 @@ V:Send + Sync + 'scope
     pub fn time_per_process(&self) -> Option<f64> {
         self.queue_stats.as_ref().map(|q|
         q.time_per_task(self.primary_q.len()))        
+    }
+
+    pub fn ratio_of_tasks_remaining(&self) -> Option<f64> {
+        self.queue_stats.as_ref().map(|q|
+        q.ratio_of_tasks_remaining(self.primary_q.len()))
+    }
+
+
+    // The user is asked to share a min_ratio_completed as the projection may not be reliable for lower
+    // ratios of completion. If that ratio is not completed, then the system returns None
+    pub fn projected_time_for_completion(&self, min_ratio_completed:f64) -> Option<f64> {
+        if let Some(ratio_pending) = self.ratio_of_tasks_remaining() {
+            if ratio_pending < (1.0 - min_ratio_completed) {
+                return Some(self.time_per_process().unwrap() * ratio_pending * self.queue_len() as f64);
+            } else {
+                return None;
+            }
+        }
+        None
     }
 
 }

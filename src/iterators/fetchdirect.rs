@@ -1,84 +1,22 @@
-use std::{cell::RefCell, mem::MaybeUninit, ops::Range, sync::atomic::{AtomicBool, AtomicUsize, Ordering}};
+//! Structure to allow direct and by reference fetching of values from Vectors.
 
 use crate::iterators::prelude::DiscreteQueue;
 
+// Initial workers are part of task scheduling algorithm used to decide number of initial threads that are launched.
 const QUEUE_SPLIT:usize = crate::push_workers::worker_controller::INITIAL_WORKERS;
-
-thread_local!(static TASK_QUEUE: RefCell<Range<isize>> = const { RefCell::new(-1..0) });
-
-#[allow(dead_code)]
-pub struct RawVec<T> 
-{
-    buf:Vec<MaybeUninit<T>>,
-}
-
-#[allow(dead_code)]
-impl<T> RawVec<T> {
-    pub fn new(vec:Vec<T>) -> Self {
-        let (ptr, len, cap) = (vec.as_ptr(), vec.len(), vec.capacity());
-        std::mem::forget(vec);
-        let buf: Vec<MaybeUninit<T>> = unsafe { Vec::from_raw_parts(ptr as *mut MaybeUninit<T>, len, cap) };
-        Self { buf}
-    }
-
-    pub fn take(&mut self, i: usize) -> Option<T> {
-        if i >= self.len() {
-            return None;
-        }
-        unsafe {
-            // read T out
-            let value = self.buf[i].as_ptr().read();
-            // replace slot with uninit
-            self.buf[i] = MaybeUninit::uninit();
-            Some(value)
-        }
-    }
-
-    fn len(&self) -> usize {
-        self.buf.len()
-    }
-}
-
-impl<T> Drop for RawVec<T> {
-    fn drop(&mut self) {
-        // take the Vec<MaybeUninit<T>> out of self, replacing with an empty Vec
-        let mut buf = std::mem::take(&mut self.buf); // self.buf becomes Vec::new()
-
-        // Now we own the old Vec in `buf`. Get its raw parts:
-        let ptr = buf.as_mut_ptr() as *mut T;
-        let len = buf.len();
-        let cap = buf.capacity();
-
-        // Prevent `buf` from being dropped (which would free the allocation).
-        // We're going to reconstruct a Vec<T> that will drop the allocation properly.
-        std::mem::forget(buf);
-
-        unsafe {
-            // Recreate a Vec<T> with the same allocation and length so elements get dropped.
-            // This is safe only if the first `len` slots are actually initialized T values.
-            let _ = Vec::from_raw_parts(ptr, len, cap);
-            // `_` is dropped here, running element Drop impls and deallocating once.
-        }
-    }
-}
-
 
 pub struct FetchDirect<T> {
     vec: Vec<T>,   
-    queue_size:usize,
-    len:usize   
+    queue_size:usize,    
 }
 
 impl<T> FetchDirect<T> {
 
-    pub fn new(vec:Vec<T>) -> Self {
-        let max_threads = crate::utils::max_threads();
-        let len = vec.len();
+    pub fn new(vec:Vec<T>) -> Self {                
         let optimal_q_size = vec.len() / QUEUE_SPLIT;                    
         Self {
             vec,
-            queue_size: optimal_q_size,
-            len
+            queue_size: optimal_q_size,            
         }
     }
 
@@ -103,7 +41,7 @@ impl<T> DiscreteQueue for FetchDirect<T> {
     }
 
     fn is_active(&self) -> bool {
-        true
+        !self.vec.is_empty()
     }
 
     fn len(&self) -> Option<usize> {
@@ -112,26 +50,18 @@ impl<T> DiscreteQueue for FetchDirect<T> {
 }
 
 pub struct FetchInDirect<'data, T> {
-    vec: &'data Vec<T>,
-    ctr: AtomicUsize,
-    start:usize,
-    active:AtomicBool,
-    queue_size:usize,
-    len:usize       
+    vec: &'data Vec<T>,    
+    start:usize,    
+    queue_size:usize,    
 }
 
 impl<'data, T> FetchInDirect<'data, T> {
-    pub fn new(vec: &'data Vec<T>) -> Self {
-        let max_threads = crate::utils::max_threads();
-        let len = vec.len();
+    pub fn new(vec: &'data Vec<T>) -> Self {        
         let optimal_q_size = vec.len() / QUEUE_SPLIT; 
         Self {
             vec,
-            start:0,
-            ctr: AtomicUsize::new(0),
-            active:AtomicBool::new(true),
-            queue_size: optimal_q_size,
-            len
+            start:0,                        
+            queue_size: optimal_q_size,            
         }
     }
 
@@ -144,20 +74,9 @@ impl<'data, T> DiscreteQueue for FetchInDirect<'data, T> {
     type Output = &'data T;
 
     fn pop(&mut self) -> Option<Self::Output> {
-        if let Some(idx) = TASK_QUEUE.with_borrow_mut(|t| t.next()){
-            if idx != -1 {                
-                return self.vec.get(idx as usize);
-            }             
-        };
-
-        let ctr = self.ctr.fetch_add(self.queue_size,Ordering::AcqRel) as isize; 
-        let mut range = ctr..isize::min(ctr + self.queue_size as isize,self.vec.len() as isize);
-        let opt_idx = range.next();
-        TASK_QUEUE.set(range);
-        if let Some(idx) = opt_idx {            
-            return self.vec.get(idx as usize);                        
-        }
-        None                                                          
+        let start = self.start;
+        self.start += 1;
+        self.vec.get(start)                                
     }
 
     fn pull(&mut self) -> Option<Vec<Self::Output>> {
@@ -174,7 +93,7 @@ impl<'data, T> DiscreteQueue for FetchInDirect<'data, T> {
     }
 
     fn is_active(&self) -> bool {
-        self.active.load(std::sync::atomic::Ordering::Relaxed)
+       !self.vec.is_empty()
     }
 
     fn len(&self) -> Option<usize> {

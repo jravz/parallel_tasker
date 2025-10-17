@@ -1,9 +1,9 @@
-//! AtomicIterator is a trait implementd on ParallelIterator and IntoParallelIterator that both employ 
-//! SizedQueue to manage exclusive access to values within Vec, HashMap that implement Iterator.
-//! SizedQueue uses Atomics to ensure that each thread does not get the same value as another thread. Allowing threads to
-//! access values in the Collection in a mutually exclusive manner.
+//! AtomicIterator is a trait implementd on ParallelIterator that is then used in Map, ForEach and other similar functions which further
+//! called the WorkerController to schedule and optimally run the tasks across threads.
+//! SizedQueue to manage exclusive access to values within HashMap and Range. Vectors are managed via FetchDirect and FetchIndirect.
+//! This is to allow faster access of Vectors as they are sequentially accessible values unlike HashMap for instance.
 
-use std::{marker::PhantomData, sync::{atomic::AtomicPtr, Arc}};
+use std::marker::PhantomData;
 
 /// ParallelIter gives a version of ParallelIterator that is expected to capture the .iter output
 /// for those that implement the same like Vec, HashMap and so on. 
@@ -57,9 +57,8 @@ where DiscQ: DiscreteQueue<Output=T>,
 }
 
 
-/// AtomicIterator trait is applied on the  ParallelIterator that has SizedQueue 
-/// due to which it is able to manage exclusive access for each thread for values within
-/// the implemented Collection type. 
+/// AtomicIterator trait is a special kind of iterator trait suited to enable both next and other
+/// larger data pulls as demanded by the parallelism algorithm and logic 
 #[allow(clippy::len_without_is_empty)]
 pub trait AtomicIterator {
     type AtomicItem;
@@ -92,60 +91,3 @@ where DiscQ:DiscreteQueue<Output = T>,
         self.iter.pull()
     }
 }
-
-// PLACEHOLDER FOR PREVIOUS CONCEPT of ShareableAtomicIter
-// /// ShareableAtomicIter enables Vec and HashMap that implement the 
-// /// Fetch trait to easily distributed across threads. Values can be safely
-// /// accessed without any risk of overlaps. Thus allowing you to design how you 
-// /// wish to process these collections across your threads
-// /// ```
-// /// use parallel_task::prelude::*;
-// /// 
-// /// // Test out the AtomicIterator for parallel management of Vectors without risk of overlaps
-// ///    let values = (0..100).collect::<Vec<_>>();
-// ///    std::thread::scope(|s| 
-// ///    {
-// ///      let shared_vec = values.into_parallel_iter().shareable();
-// ///      let share_clone = shared_vec.clone();
-// ///      s.spawn(move || {
-// ///         let tid = std::thread::current().id();
-// ///         while let Some(val) = shared_vec.next(){
-// ///             print!(" [{:?}: {}] ",tid,val);
-// ///         }
-// ///         });
-// ///      s.spawn(move || {
-// ///         let tid = std::thread::current().id();
-// ///         while let Some(val) = share_clone.next(){
-// ///             print!(" [{:?}: {}] ",tid,val);
-// ///         }
-// ///         });
-// ///      }
-// /// );
-// /// ```
-// pub struct ShareableAtomicIter<T> 
-// where T: AtomicIterator
-// {
-//     ptr: AtomicPtr<T>
-// }
-
-// impl<T> ShareableAtomicIter<T> 
-// where T: AtomicIterator {
-
-//     pub fn new(val:T) -> Self {
-
-//         let ptr = Box::into_raw(Box::new(val));
-
-//         ShareableAtomicIter {
-//             ptr: AtomicPtr::new(ptr)
-//         }
-//     }
-
-//     pub fn next(&self) -> Option<<T as AtomicIterator>::AtomicItem> {
-//         unsafe {
-//             if let Some(mutable) = self.ptr.load(std::sync::atomic::Ordering::Acquire).as_mut() {
-//                 return mutable.atomic_next();
-//             };
-//         }        
-//         None
-//     }
-// }

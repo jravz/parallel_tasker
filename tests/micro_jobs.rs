@@ -5,7 +5,6 @@ use rand::Rng;
 
 #[derive(Debug, Clone)]
 struct Job {
-    id: usize,
     duration: Duration,
 }
 
@@ -35,8 +34,7 @@ fn create_micro_jobs(count: usize) -> Vec<Job> {
             } else {
                 rng.random_range(3000..=10000)
             };
-            Job {
-                id,
+            Job {                
                 duration: Duration::from_micros(micros),
             }
         })

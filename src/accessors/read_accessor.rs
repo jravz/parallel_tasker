@@ -1,10 +1,19 @@
-use std::{hint::spin_loop, ops::{Deref, DerefMut}, sync::{atomic::AtomicPtr, Arc}};
+//! Accessors consist of a primary and a secondary accessor. When creating a limited access queue it never gives direct access
+//! to the queue itself. But it gives access to the primary and secondary accessors. These may then be moved in to separate
+//! threads to then manage the access to the queue. Primary has the additional ability to steal. Secondary cannot steal.
+//! If primary pushes a new set of tasks and changes the status, the secondary can pull the same on command.
+//! The reason for just two accessors is to create a synchronised atomics based management of queue across threads. The accessors
+//! are inherently fast compared to channels and do not engage Locks.
+//! The accessors cannot be cloned.
 
-use crate::{accessors::limit_queue::LimitAccessQueue, utils::SpinWait};
+use std::{ops::{Deref, DerefMut}, sync::{atomic::AtomicPtr, Arc}};
+
+use crate::{accessors::limit_queue::LimitAccessQueue};
 
 
-/// Add a primary and secondary accessor to easily differentiate during usage
-/// and at the time of creation.
+/// Adds a primary and secondary accessor to easily differentiate the read accessors during usage
+/// and at the time of creation. These are just covers on the read accessors as they implement deref and deref mut to enable
+/// the access to read accessor functions.
 macro_rules! readaccessorref {
     ($($RdAc:ident),*) => {
         $(  
@@ -156,19 +165,11 @@ where State: Clone + Default
     }
 
     pub fn is_empty(&self) -> bool {
-        if let Some(val) = self.within_mutable_block(|l| Some(l.is_empty())){
-            val
-        } else {
-            true
-        }
+        self.within_mutable_block(|l| Some(l.is_empty())).unwrap_or(true)
     }
 
     pub fn len(&self) -> usize {
-        if let Some(val) = self.within_mutable_block(|l| Some(l.val.len())){
-            val
-        } else {
-            0usize
-        }
+        self.within_mutable_block(|l| Some(l.val.len())).unwrap_or_default()        
     }
 
 
@@ -179,8 +180,9 @@ where State: Clone + Default
             Err(false)
         }        
     }
-
-    pub fn replace(&self, values:Vec<T>) -> Result<bool,bool> {
+    
+    #[allow(clippy::redundant_pattern_matching)]
+    pub fn replace(&self, values:Vec<T>) -> Result<bool,bool> {        
         if let Some(_) = self.within_mutable_block(|l| Some(l.replace(values))) {
             Ok(true)
         } else {
@@ -214,7 +216,6 @@ where State: Clone + Default
                 None
             }
             ReadAccessorType::Primary => { 
-                
                 self.within_mutable_block(|l| l.steal_half())               
             }
         }
@@ -227,11 +228,7 @@ where State: Clone + Default
     }
 
     pub fn state(&mut self) -> State {
-        if let Some(state) = self.within_mutable_block(|l| Some(l.get_state())) {
-            state
-        } else {
-            State::default()
-        }
+        self.within_mutable_block(|l| Some(l.get_state())).unwrap_or_default()        
     }
     
 }

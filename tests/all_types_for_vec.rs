@@ -21,9 +21,4 @@ fn all_types_test_for_vec() {
     .into_parallel_iter().map(|mut x|x.push(100)).collect::<Vec<_>>();
     assert_eq!(v.len(),100_000);
 
-    // NonNull does not implement Send. So cannot be tested
-    // let v = (0..100_000).map(|x|NonNull::new(&mut x).unwrap()).collect::<Vec<_>>()
-    // .into_parallel_iter().map(|x|).collect::<Vec<_>>();
-    // assert_eq!(v.len(),100_000);
-
 }

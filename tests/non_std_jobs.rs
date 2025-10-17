@@ -6,7 +6,6 @@ use rayon::prelude::*;
 
 #[derive(Debug,Clone)]
 struct Job {
-    id: usize,
     runtime_us: u64, // microseconds
 }
 
@@ -15,9 +14,9 @@ fn generate_nonstandard_jobs() -> Vec<Job> {
 
     // 100 jobs, each with 1 µs – 50 ms runtime
     let mut jobs: Vec<Job> = (0..100)
-        .map(|i| {
+        .map(|_| {
             let runtime_us = rng.random_range(500..=50_000); // 0.5 ms to 50 ms
-            Job { id: i, runtime_us }
+            Job {runtime_us }
         })
         .collect();
 
@@ -39,7 +38,7 @@ fn non_std_jobs() {
     let vec_jobs1 = vec_jobs.clone();
     let vec_jobs2 = vec_jobs.clone();
     let tm = std::time::Instant::now();
-    vec_jobs.into_iter().map(|job|{thread::sleep(Duration::from_micros(job.runtime_us));})
+    _ = vec_jobs.into_iter().map(|job|{thread::sleep(Duration::from_micros(job.runtime_us));})
     .collect::<Vec<_>>();
     println!("Normal : {}",tm.elapsed().as_micros());
  
@@ -58,7 +57,7 @@ fn non_std_jobs() {
     let vec_jobs1 = vec_jobs.clone();
     let vec_jobs2 = vec_jobs.clone();
     let tm = std::time::Instant::now();
-    vec_jobs.into_iter().map(|job|{thread::sleep(Duration::from_micros(job.runtime_us));})
+    _ = vec_jobs.into_iter().map(|job|{thread::sleep(Duration::from_micros(job.runtime_us));})
     .collect::<Vec<_>>();
     println!("Normal : {}",tm.elapsed().as_micros());
 

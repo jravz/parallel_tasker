@@ -1,281 +1,131 @@
-use std::{hint::spin_loop, sync::{atomic::{AtomicBool, AtomicPtr}, Arc}};
+//! LimitAccessQueue is where the queue is stored and managed. This may only be accessed via the accessors.
+use crate::utils::SpinWait;
+use super::read_accessor::*;
+use std::sync::{atomic::AtomicBool, Arc};
 
-pub struct LimitAccessQueue<T> {
-    val: Vec<T>,
-    primary_block: AtomicBool,
-    write_block: AtomicBool
-}
-
-pub enum ReadAccessorType {
-    Primary,
-    Secondary
-}
-
-pub struct ReadAccessor<T> 
-{
-    val: Arc<AtomicPtr<LimitAccessQueue<T>>> ,
-    rtype: ReadAccessorType
-}
-
-#[allow(dead_code)]
-impl<T> ReadAccessor<T> 
-{
-
-    fn is_blocked(&self) -> bool {
-        unsafe {
-            if let Some(val) = (self.val.load(std::sync::atomic::Ordering::Acquire)).as_ref() {
-                val.is_blocked()
-            } else {
-                true
-            }
-        }        
-    }
-
-    fn block(&self) -> Result<bool,bool> {        
-        if let Some(obj) = self.get_mut() {
-            obj.block()
-        } else {
-            panic!("Error in accessing limit queue accessor object.");
-        }
-    }
-
-    fn unblock(&self) -> Result<bool,bool> {        
-        if let Some(obj) = self.get_mut() {
-            obj.unblock()
-        } else {
-            panic!("Error in accessing limit queue accessor object.");
-        }
-    }
-
-    fn get_ref(&self) -> Option<&LimitAccessQueue<T>> {
-        unsafe {
-             if let Some(val) = (self.val.load(std::sync::atomic::Ordering::Acquire)).as_ref() {
-                Some(val)
-            } else {
-                None
-            }
-        }       
-    }
-
-    fn get_mut(&self) -> Option<&mut LimitAccessQueue<T>> {        
-        unsafe {
-             if let Some(val) = (self.val.load(std::sync::atomic::Ordering::Acquire)).as_mut() {
-                Some(val)
-            } else {
-                None
-            }
-        }       
-    } 
-
-    pub fn pop(&self) -> Option<T> {
-        unsafe {  
-
-            while self.block().is_err() {
-                spin_loop();
-            }
-
-            let res = if let Some(val) = self.val.load(std::sync::atomic::Ordering::Acquire).as_mut() {
-                val.pop()
-            } else {
-                None
-            };
-
-            _ = self.unblock();
-
-            res
-        }                
-    }
-
-    pub fn is_empty(&self) -> bool {
-        if let Some(obj) = self.get_mut() {
-            while obj.block().is_err() {spin_loop();}
-            let empty = obj.val.is_empty();
-            while obj.unblock().is_err() {spin_loop();}
-            return empty;
-        }
-        true
-    }
-
-    pub fn len(&self) -> usize {
-        if let Some(obj) = self.get_mut() {
-            while obj.block().is_err() {spin_loop();}
-            let len = obj.len();
-            while obj.unblock().is_err() {spin_loop();}
-            return len;
-        }
-        0_usize
-    }
-
-    pub fn write(&mut self, values:Vec<T>) -> Result<bool,bool> {
-        if let Some(obj) = self.get_mut() {
-            obj.write(values);
-            Ok(true)
-        } else {
-            Err(false)
-        }
-    }
-
-    pub fn replace(&self, values:Vec<T>) -> Result<bool,bool> {
-        if let Some(obj) = self.get_mut() {
-            obj.replace(values);
-            Ok(true)
-        } else {
-            Err(false)
-        }
-    }
-
-    pub fn is_write_blocked(&self) -> bool {
-        if let Some(obj) = self.get_ref() {
-            obj.is_write_blocked()
-        } else {
-            true
-        }
-    }
-
-    pub fn steal(&mut self) -> Option<Vec<T>> {
-        match self.rtype {
-            ReadAccessorType::Secondary => {
-                None
-            }
-            ReadAccessorType::Primary => {                
-                if let Some(obj) = self.get_mut() {
-                    obj.steal()
-                } else {
-                    None
-                }
-            }
-        }
-    }
-
-    pub fn steal_half(&mut self) -> Option<Vec<T>> {
-        match self.rtype {
-            ReadAccessorType::Secondary => {
-                None
-            }
-            ReadAccessorType::Primary => {                
-                if let Some(obj) = self.get_mut() {
-                    obj.steal_half()
-                } else {
-                    None
-                }
-            }
-        }
-    }
+pub struct LimitAccessQueue<T,State> {
+    pub val: Vec<T>,    
+    write_block: AtomicBool,
+    state: State
 }
 
 #[allow(dead_code,clippy::new_ret_no_self)]
-impl<T> LimitAccessQueue<T> 
+impl<T,State> LimitAccessQueue<T,State> 
+where State: Default + Clone
 {
-    pub fn new() -> (ReadAccessor<T>,ReadAccessor<T>) {
-        let obj = Box::new(Self {
-            val: Vec::new(),
-            primary_block: AtomicBool::new(false),
-            write_block: AtomicBool::new(false)
-        });
-
+    pub fn new() -> (PrimaryAccessor<T,State>,SecondaryAccessor<T,State>) {
+        let arc_obj = Arc::new(Self {
+            val: Vec::new(),            
+            write_block: AtomicBool::new(false),            
+            state: State::default()            
+        });        
+        
         //we need to ensure the object within AtomicPtr survives on the heap and beyond
-        //the function stack. 
-        let obj_ptr = Box::into_raw(obj);
-        let arc_obj: Arc<AtomicPtr<LimitAccessQueue<T>>> = Arc::new(AtomicPtr::new(obj_ptr));
-        let primary = ReadAccessor {
-            val: arc_obj.clone(),
-            rtype: ReadAccessorType::Primary
-        };
-
-        let secondary = ReadAccessor {
-            val: arc_obj,
-            rtype: ReadAccessorType::Secondary
-        };     
-
-        (primary,secondary)
+        //the function stack.                   
+        let primary = ReadAccessor::new(arc_obj.clone(),ReadAccessorType::Primary);
+        let secondary = ReadAccessor::new(arc_obj,ReadAccessorType::Secondary);             
+        (PrimaryAccessor::new(primary), SecondaryAccessor::new(secondary))
+                     
+       
     }
 
-    pub fn block(&mut self) -> Result<bool,bool> {
-        self.primary_block.compare_exchange(false, true, std::sync::atomic::Ordering::SeqCst, std::sync::atomic::Ordering::SeqCst)
+    pub fn set_state(&mut self, state:State) {
+        self.with_write_block(|s|{
+            s.state = state;
+        });
     }
 
-    pub fn unblock(&mut self) -> Result<bool,bool> {
-        self.primary_block.compare_exchange(true, false, std::sync::atomic::Ordering::SeqCst, std::sync::atomic::Ordering::SeqCst)
-    }
-
-    pub fn is_blocked(&self) -> bool {
-        self.primary_block.load(std::sync::atomic::Ordering::Acquire)
+    pub fn get_state(&mut self) -> State {
+        self.with_write_block(|s|{
+            s.state.clone()
+        })
     }
 
     pub fn pop(&mut self) -> Option<T> {
-        self.val.pop()
+        self.with_write_block(|s| { 
+            s.val.pop()
+        })       
     }
 
-    pub fn steal(&mut self) -> Option<Vec<T>> { 
-        // first block before you steal       
-        while self.block().is_err() {
-            spin_loop();
-        };
-
-        let response = if self.val.is_empty() {
-            None
-        } else {
-            Some(self.val.drain(0..).collect::<Vec<T>>())
-        };
-        if self.unblock().is_err() {
-            panic!("Unknown error occurred when stealing from the queue");
-        };
-        response       
+    pub fn steal(&mut self) -> Option<Vec<T>> {         
+        self.with_write_block(|s| {
+            if s.val.is_empty() {
+                None
+            } else {
+                // using mem swap to expedite the process
+                let mut tmp:Vec<T> = Vec::with_capacity(1);
+                std::mem::swap(&mut tmp, &mut s.val);
+                Some(tmp)            
+            }        
+        })              
     }
 
-    pub fn steal_half(&mut self) -> Option<Vec<T>> { 
-        // first block before you steal       
-        while self.block().is_err() {
-            spin_loop();
-        };
-
-        let response = if self.val.is_empty() {
-            None
-        } else {
-            let halflen = self.len() / 2;
-            Some(self.val.drain(0..halflen).collect::<Vec<T>>())            
-        };
-        if self.unblock().is_err() {
-            panic!("Unknown error occurred when stealing from the queue");
-        };
-        response       
+    pub fn steal_half(&mut self) -> Option<Vec<T>> {          
+        self.with_write_block(|s| {         
+            if s.val.is_empty() {                
+                None
+            } 
+            else {
+                let halflen = s.val.len() / 2;   
+                let res = s.val.drain(0..halflen).collect::<Vec<T>>();          
+                Some(res)            
+            }            
+        })                      
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.val.is_empty()
+    pub fn is_empty(&mut self) -> bool { 
+        self.len() == 0              
     }
 
-    pub fn len(&self) -> usize {
-        self.val.len()
+    pub fn len(&mut self) -> usize {         
+        self.with_write_block(|s|{
+            if s.val.is_empty() { 0usize } else { s.val.len() }
+        })        
     }
 
-    pub fn write(&mut self, mut values:Vec<T>) {                               
-        // wait till you have permission to write and then block
-        while self.write_block.compare_exchange(false, true, std::sync::atomic::Ordering::SeqCst, std::sync::atomic::Ordering::SeqCst) 
-        .is_err()
-        {     
-            spin_loop();   
-        }        
-        let drained = values.drain(0..);                
-        self.val.extend(drained);        
-        //restore permission to write
-        self.write_block.store(false, std::sync::atomic::Ordering::SeqCst);        
+    pub fn atomic_write_block_to_true(&mut self) -> Result<bool, bool> {
+        self.write_block.compare_exchange(false, true, std::sync::atomic::Ordering::SeqCst, std::sync::atomic::Ordering::SeqCst)
+    }    
+
+    pub fn with_write_block<F,Output>(&mut self, f:F) -> Output
+    where F: FnOnce(&mut Self) -> Output {                          
+        SpinWait::loop_while_mut(||self.atomic_write_block_to_true().is_err());                            
+        let output = f(self);
+        self.write_block.store(false, std::sync::atomic::Ordering::SeqCst);                 
+        output
     }
 
-    pub fn replace(&mut self, mut values:Vec<T>) {                       
-        // wait till you have permission to write and then block
-        while self.write_block.compare_exchange(false, true, std::sync::atomic::Ordering::SeqCst, std::sync::atomic::Ordering::SeqCst) 
-        .is_err()
-        {     
-            spin_loop();   
-        }
-        std::mem::swap(&mut values, &mut self.val);             
-        //restore permission to write
-        self.write_block.store(false, std::sync::atomic::Ordering::SeqCst);
+    pub fn push(&mut self, value:T) {
+
+        self.with_write_block(|s|
+        {
+            s.val.push(value);
+        });        
+    }
+
+    pub fn write(&mut self, mut values:Vec<T>) {     
+        self.with_write_block(|s|{
+            let drained = values.drain(0..);                
+            s.val.extend(drained); 
+        });                                         
+    }
+
+    pub fn replace(&mut self, mut values:Vec<T>) {    
+        self.with_write_block(|s|{             
+            std::mem::swap(&mut values, &mut s.val);                      
+        });                            
     }
 
     pub fn is_write_blocked(&self) -> bool {
         self.write_block.load(std::sync::atomic::Ordering::SeqCst)
     }
+
+    // pub fn ingest_iter<I>(&mut self, mut i:I)
+    // where I:AccessQueueIngestor<IngestorItem = T>
+    // {
+    //     while let Some(value) = i.next_chunk() {
+    //         self.push(value);
+    //     }
+    // }
 
 }

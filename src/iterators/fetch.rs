@@ -1,5 +1,5 @@
 //! Fetch used to be a prominent module. But the same has now been displaced with
-//! AtomicQueuedValues
+//! SizedQueue
 
 use std::collections::HashMap;
 

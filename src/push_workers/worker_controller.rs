@@ -1,18 +1,17 @@
-use std::collections::VecDeque;
+//! WorkerController is the core module and the brain responsible for raising the threads and managing the tasks across thread pools
+//! in an efficient manner. It follows a primary task distribution, followed by task redistribution across threads on the principle of
+//! stealing, followed by joining across threads to return. 
+
 use std::sync::{Arc, RwLock};
 use std::thread::Scope;
-use std::sync::mpsc::{channel as async_channel, Receiver, Sender, TrySendError};
-
 use crate::collector::Collector;
 use crate::errors::WorkThreadError;
 use crate::prelude::AtomicIterator;
-use crate::push_workers::worker_thread::ThreadMesg;
+use crate::push_workers::thread_manager::ThreadManager;
 
-use super::worker_thread::{CMesg, Coordination, WorkerThread};
+use super::worker_thread::WorkerThread;
 
-// With 2 queues, the thread always has a backup to work on and does not wait
-const BUF_SIZE_CHANNEL:usize = 1;
-const INITIAL_WORKERS:usize = 1;
+pub const INITIAL_WORKERS:usize = 2;
 
 pub struct WorkerController<F,V,T,I> 
 where F: Fn(V) -> T + Send + Sync,
@@ -21,13 +20,10 @@ T: Send + Sync,
 I:AtomicIterator<AtomicItem = V> + Send + Sized 
 {
     f:Arc<RwLock<F>>,
-    values: I,
-    all_sender:Sender<ThreadMesg>,
-    all_receiver: Receiver<ThreadMesg>,
-    buf_size: usize
+    values: I,  
+    avg_task_len: Option<usize>,    
+    max_threads: usize,
 }
-
-type ThreadInfo<'scope, T,V> = WorkerThread<'scope,V,T>;
 
 impl<F,V,T,I>  WorkerController<F,V,T,I>
 where F: Fn(V) -> T + Send + Sync,
@@ -37,217 +33,176 @@ I:AtomicIterator<AtomicItem = V> + Send + Sized
 {
 
     pub fn new(f:F, values:I) -> Self 
-    {
-        //send/receive channel to reply on success
-        let (all_sender, all_receiver) = async_channel::<ThreadMesg>();
-        
+    {                      
         Self {
             f: Arc::new(RwLock::new(f)),
-            values,
-            all_sender,
-            all_receiver,
-            buf_size: BUF_SIZE_CHANNEL
+            values,            
+            avg_task_len:None,
+            max_threads: crate::utils::max_threads()/2
         }
     }
 
-    fn next_task(&mut self) -> Option<CMesg<V>> {
-        
-        let vec = self.values.atomic_pull(); 
-        vec.map(CMesg::run_task)                                          
+    pub fn set_max_threads(&mut self, limit:usize) {
+        self.max_threads = usize::min(limit, crate::utils::max_threads());
     }
 
-    fn add_thread<'scope,'env>(&mut self, scope:&'scope std::thread::Scope<'scope, 'env>, threads:&mut Vec<ThreadInfo<'scope,T,V>>) -> Result<(),WorkThreadError>
-    where T: 'scope,
-    V: 'scope,
-    F: 'scope
-    {
-        let worker_sender_clone = self.all_sender.clone();                                                         
-        let arc_f_clone: Arc<RwLock<F>> = self.f.clone();       
-        match WorkerThread::launch(scope,worker_sender_clone,threads.len(),self.buf_size, arc_f_clone) {
-            Ok(t) =>  {                                                    
-                threads.push(t);  
-                Ok(())                                                                                                        
-            } 
-            Err(e) =>  {
-                Err(WorkThreadError::ThreadAdd(e.to_string()))
-            }
-        }                              
+    fn avg_task_length(&self) -> Option<usize> {
+        self.avg_task_len
     }
 
+    fn set_avg_task_length(&mut self, size:usize) {
+        self.avg_task_len = Some(size);
+    }
+
+    fn add_next_task(&mut self, vec_tasks:&mut Vec<Vec<V>>) {
+        if let Some(vec) = self.next_task() {
+            vec_tasks.push(vec);
+        }
+    }
+
+    ///run function is usually called after WorkerController is instantiated.
+    ///It is responsible for running the three processes: generate threads and pull from primary queue, 
+    /// redistribute and conquer work amongst threads and join for closure
     pub fn run<C>(&mut self) -> Result<C,WorkThreadError>
     where C: Collector<T>,    
-    {                        
-        let max_threads = crate::utils::max_threads();              
-
+    {                                             
         std::thread::scope(            
-            |s: &Scope<'_, '_>| {                   
-                let mut results = C::initialize();           
-                let mut threads:Vec<ThreadInfo<'_,T,V>> =Vec::new();                                                                                                                                                     
-                
-                // Generate initial worker threads as you need at least 1 by default. Record control time
-                let tm = std::time::Instant::now();   
-                for _ in 0..INITIAL_WORKERS {
-                    self.add_thread(s, &mut threads)?;                   
-                }                                                                                                            
-                let mut control_time = tm.elapsed().as_nanos();                          
-                                
-                let mut task:CMesg<V> = self.next_task().unwrap_or(CMesg::done());                                                            
-                           
-                let mut process_time = std::time::Instant::now(); 
-                let mut elapsed_monitored_time = 0;
-
-                let mut free_threads:VecDeque<usize> = VecDeque::new();
-
-                loop {                                                                                                              
-                    if let Ok(ThreadMesg::Free(pos, _)) = self.all_receiver.try_recv() {                                                 
-                        elapsed_monitored_time = process_time.elapsed().as_nanos();                        
-                        process_time = std::time::Instant::now();                      
-                        
-                        let thread= &mut threads[pos];                        
-                        
-                        task = if let Some((task,_)) = self.send_task(thread,  task) {                                
-                            task
-                        } else {
-                            free_threads.push_back(pos);
-                            break;
-                        };                                                                                               
-                    } 
- 
-                    if threads.len() < max_threads && elapsed_monitored_time as f64 > control_time as f64  { 
-                        
-                        let tm = std::time::Instant::now();
-                        self.add_thread(s, &mut threads)?;                                                    
-                        control_time = tm.elapsed().as_nanos();                                
-                    }                                                                                                                                                                                                                                                           
-                }
-                                              
-                if threads.len() > 2 {
-                    let mut task:Option<CMesg<V>> = None;
-                    let mut min_rate_change:f64;
-                    let mut maxpos:isize = -1;
-                    let mut jobstatus = (0..threads.len())
-                    .map(|idx| (threads[idx].primary_q.len(),0.0))
-                    .collect::<Vec<(usize,f64)>>();
-                    loop {                                         
-                        if task.is_none() {
-                            min_rate_change = 1.0;
-                            maxpos = -1;
-                            let mut maxlen:usize = 0;
-                            for (pos,thread) in &mut threads.iter_mut().enumerate() {
-                                let currlen = thread.primary_q.len();
-                                let (lastlen, _rate_of_change) = jobstatus[pos];                            
-                                let curr_rate_change = if (lastlen == 0) || (lastlen < currlen) { 1.0 } else { (lastlen - currlen) as f64 / lastlen as f64 };                                                        
-                                jobstatus[pos] = (currlen,curr_rate_change);
-
-                                if curr_rate_change < min_rate_change  && currlen > 0 &&  currlen > maxlen {
-                                    // print!(" ({}::{}) ",pos,curr_rate_change);
-                                    maxpos = pos as isize;
-                                    min_rate_change = curr_rate_change;
-                                    maxlen = currlen;
-                                }                           
-                            }
-
-                            if maxpos == -1 { 
-                                // println!("No max available");
-                                break; }
-
-                            if let Some(pending) = threads[maxpos as usize].primary_q.steal_half() {
-                                // println!("Out: {}->Len:{}",maxpos,pending.len());
-                                task = Some(CMesg::run_task(pending));                                                     
-                            } else {
-                                // println!("Steal failed: ");
-                            }
-                        }                    
-
-                        if task.is_some() {                        
-                            if let Some(free_pos) = free_threads.pop_front() {
-                                if free_pos != maxpos as usize {
-                                    let new_task = task.unwrap();
-                                    let free_thread = &mut threads[free_pos];                            
-                                    if let Err(fail_task) = self.send_leaked_task(free_thread, new_task) {
-                                        // println!("Failed: From:{} To:{}",maxpos,free_pos);
-                                        task = Some(fail_task);
-                                    } else {
-                                        // println!("Success: From:{} To:{}",maxpos,free_pos);                                        
-                                        task = None;
-                                    }
-                                } else {
-                                    // println!("Retry:From:{} To:{}",maxpos,free_pos);
-                                    free_threads.push_back(free_pos);
-                                }
-                                
-                            }
-                        } else {
-                            break;
-                        }                                                            
-
-                        // Get the next free thread
-                        while let Ok(msg) = self.all_receiver.try_recv() {
-                            if let ThreadMesg::Free(pos, _) = msg {   
-                                // println!("Freed:{}",pos); 
-                                // if !ignore_threads[pos] {
-                                    free_threads.push_back(pos);  
-                                // }                                                                             
-                            }
-                        }                                                                       
-                    }     
-                }
-                                                              
-                // println!("work stealing = {}",tm.elapsed().as_micros());    
-
-                //join all threads                     
-                for thread in threads {                                                                    
-                    if let Ok(res) = thread.join(){
-                        results.extend(res.into_iter());
-                    };                                                                                                     
-                }  
-                // println!("time to join = {}",tm.elapsed().as_micros());                    
-                       
-                Ok(results)
-            }
-            
+            |s: &Scope<'_, '_>| {   
+              
+                let mut thread_manager = ThreadManager::new(s,self.f.clone(), self.max_threads);                                                                                                                                                                                                                                                                                                                                                                                                                                     
+               
+                let control_time = self.primary_queue_distribution(&mut thread_manager)?;        
+                      
+                self.redistribute_among_threads( &mut thread_manager,control_time);                 
+                                                            
+                thread_manager.join_all_threads()                                                                  
+            }            
         )        
     }
 
-    fn send_leaked_task<'scope>(&mut self, thread:&mut WorkerThread<'scope, V,T>, task:CMesg<V>) -> Result<(),CMesg<V>>
+    fn primary_queue_distribution<'env, 'scope>(&mut self, thread_manager: &mut ThreadManager<'env, 'scope,V,T,F>) -> Result<u128,WorkThreadError>
+    where 'env: 'scope,     
+    V: Send + Sync + 'scope,
+    T: Send + Sync + 'scope, 
+    F:Fn(V) -> T + Send + Sync + 'scope
+    {
+
+        // Intermediate buffer to store the tasks
+        let mut vec_tasks:Vec<Vec<V>> = Vec::new();        
+
+        // Generate initial worker threads as you need at least 1 by default. Record control time
+        let tm = std::time::Instant::now();                   
+        (0..INITIAL_WORKERS).for_each(|_| {
+            self.add_next_task(&mut vec_tasks);
+            _ = thread_manager.add_thread();           
+        });
+        let control_time = tm.elapsed().as_nanos() / INITIAL_WORKERS as u128; 
+         
+        (0..INITIAL_WORKERS).for_each(|pos| {
+            let thread = thread_manager.get_mut_thread(pos);
+            if self.send_task(thread,vec_tasks.pop()).is_err() {  
+                thread_manager.add_to_free_queue(pos);                                  
+            };
+        });
+
+        Ok(control_time)
+    }
+
+    
+
+    /// Redistribution works on the principle that if there is a free thread and there is another thread that has a large
+    /// queue of tasks, then the former should get half to save on time.
+    /// It does this till the thread with the biggest queue has upto or less than 10% of the tasks from the intial 
+    /// chunkwise distribution in the primary loop. 
+    fn redistribute_among_threads<'env, 'scope>(&mut self, thread_manager: &mut ThreadManager<'env, 'scope,V,T,F>, mut control_time:u128) 
+    where 'env: 'scope,     
+    V: Send + Sync + 'scope,
+    T: Send + Sync + 'scope,   
+    F: Send + Sync + 'scope,   
+    {        
+        if thread_manager.thread_len() > 0 //if just 2 threads, there is nothing to redistribute as such
+        && self.avg_task_length().is_some() //ensure at least one set of values was sent to queue
+        {                                                                               
+            let mut stop_loop = false;
+            loop {                 
+                if !thread_manager.has_free_threads() {                                                                                                      
+                    if let Ok(tm) = thread_manager.refresh_free_threads(control_time) {
+                        control_time = tm;
+                    }                    
+                }
+
+                while thread_manager.has_free_threads() && !stop_loop {                                        
+                    let mut vec_ranking:Vec<(usize, usize)> = Vec::new();
+                    for idx in 0..thread_manager.thread_len() {
+                        let thread = thread_manager.get_mut_thread(idx);
+                        vec_ranking.push((thread.pos(),thread.queue_len()));                                                                 
+                    }                                        
+                    let mut task:Option<Vec<V>>;
+                    vec_ranking.sort_by(|a,b|b.1.cmp(&a.1));
+                    let min_allowed_time = 0; 
+                    for (idx,(pos,remaining))  in vec_ranking.into_iter().enumerate() {                        
+                        if remaining <= min_allowed_time {                                    
+                            if idx == 0 {                                        
+                                stop_loop = true;
+                                break;
+                            }
+                        } else if let Some(freepos) = thread_manager.pop_from_free_queue() {                                                                                                                                 
+                                task = thread_manager.get_mut_thread(pos).primary_q.steal_half(); 
+                                if let Some(new_task) = task {                                                                      
+                                    if new_task.is_empty() {                                            
+                                        thread_manager.add_to_free_queue(freepos);
+                                    } else {                                            
+                                        let free_thread = thread_manager.get_mut_thread(freepos);
+                                        if self.send_leaked_task(free_thread, new_task).is_err() {
+                                            stop_loop = true;                         
+                                            break;
+                                        };
+                                    }
+                                } else {                                                                      
+                                    thread_manager.add_to_free_queue(freepos);
+                                } 
+                                    
+                        } else {                                    
+                            break;
+                        }
+                                                
+                    }                   
+                }
+                
+                if stop_loop {                            
+                    break;
+                }                 
+            }                    
+        } 
+    }    
+
+    fn next_task(&mut self) -> Option<Vec<V>> {
+        self.values.atomic_pull()
+    }
+
+    #[allow(clippy::needless_lifetimes)] //this calls incorrectly otherwise
+    fn send_leaked_task<'scope>(&mut self, thread:&mut WorkerThread<'scope, V,T>, values:Vec<V>) -> Result<(),WorkThreadError>
     where V: Send + Sync + 'scope,
     T: Send + Sync + 'scope,    
     I:AtomicIterator<AtomicItem = V> + Send + Sized 
-    { 
-        if let Err(TrySendError::Full(e)) = thread.try_send(task) {
-            return Err(e);
-        };
-
-        Ok(())
+    {                              
+        thread.run(values)                             
     }
     
 
-    fn send_task<'scope>(&mut self, thread:&mut WorkerThread<'scope, V,T>, task:CMesg<V>) -> Option<(CMesg<V>,bool)>
+    fn send_task<'scope>(&mut self, thread:&mut WorkerThread<'scope, V,T>, task:Option<Vec<V>>) -> Result<(),WorkThreadError>
     where V: Send + Sync + 'scope,
     T: Send + Sync + 'scope,    
     I:AtomicIterator<AtomicItem = V> + Send + Sized 
-    {                
-        let task = match thread.try_send(task) {
-            Ok(_) => { 
-                if let Some(task) = self.next_task(){
-                    (task,true)
-                } else {
-                    return None;
-                }                                 
-            }
-            Err(e) => {                
-                if let TrySendError::Full(mesg) = e {
-                    (mesg,false)
-                } else {
-                    (CMesg {
-                        msgtype:Coordination::Done,
-                        msg: None
-                    },false)
-                }
-            }
-        };        
-        
-        Some(task)
+    {            
+        if let Some(values) = task {
+            if self.avg_task_length().is_none() {
+                self.set_avg_task_length(values.len());
+            }                          
+            thread.run(values)
+        } else {            
+            Err(WorkThreadError::Other("error when sending task to queue".to_owned()) )
+        }                   
     }
 }
 

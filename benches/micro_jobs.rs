@@ -5,8 +5,7 @@ use parallel_task::prelude::*;
 use rand::Rng;
 
 #[derive(Debug, Clone)]
-struct Job {
-    id: usize,
+struct Job {    
     duration: Duration,
 }
 
@@ -22,15 +21,14 @@ impl Job {
 fn create_micro_jobs(count: usize) -> Vec<Job> {
     let mut rng = rand::rng();
     (0..count)
-        .map(|id| {
+        .map(|_| {
             let p = rng.random_range(0..100);
             let micros = if p < 90 {
                 rng.random_range(50..=500)
             } else  {
                 rng.random_range(500..=1000)
             };
-            Job {
-                id,
+            Job {                
                 duration: Duration::from_micros(micros),
             }
         })

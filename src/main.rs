@@ -1,5 +1,3 @@
-use std::{collections::HashMap, time::Duration};
-
 use parallel_task::prelude::*;
 
 fn main() {

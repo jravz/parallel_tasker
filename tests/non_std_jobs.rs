@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use std::thread;
 use rand::Rng;
 use parallel_task::prelude::*;

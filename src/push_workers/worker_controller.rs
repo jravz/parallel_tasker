@@ -12,6 +12,7 @@ use crate::push_workers::thread_manager::ThreadManager;
 use super::worker_thread::WorkerThread;
 
 pub const INITIAL_WORKERS:usize = 2;
+const MIN_QUEUE_LENGTH:usize = 2;
 
 pub struct WorkerController<F,V,T,I> 
 where F: Fn(V) -> T + Send + Sync,
@@ -38,7 +39,7 @@ I:AtomicIterator<AtomicItem = V> + Send + Sized
             f: Arc::new(RwLock::new(f)),
             values,            
             avg_task_len:None,
-            max_threads: crate::utils::max_threads()/2
+            max_threads: crate::utils::max_threads()
         }
     }
 
@@ -131,23 +132,25 @@ I:AtomicIterator<AtomicItem = V> + Send + Sized
                     }                    
                 }
 
-                while thread_manager.has_free_threads() && !stop_loop {                                        
-                    let mut vec_ranking:Vec<(usize, usize)> = Vec::new();
-                    for idx in 0..thread_manager.thread_len() {
-                        let thread = thread_manager.get_mut_thread(idx);
-                        vec_ranking.push((thread.pos(),thread.queue_len()));                                                                 
-                    }                                        
-                    let mut task:Option<Vec<V>>;
+                while thread_manager.has_free_threads() && !stop_loop {  
+
+                    let mut vec_ranking = thread_manager.threads_as_mutable()
+                    .iter_mut().map(|thread|
+                    {
+                        (thread.pos(),thread.queue_len())
+                    }).collect::<Vec<(usize, usize)>>();
                     vec_ranking.sort_by(|a,b|b.1.cmp(&a.1));
-                    let min_allowed_time = 0; 
+                                                          
+                    let mut task:Option<Vec<V>>;                    
+                    let min_queue_length = MIN_QUEUE_LENGTH; // At 2 jobs, there is nothing much to distribute 
                     for (idx,(pos,remaining))  in vec_ranking.into_iter().enumerate() {                        
-                        if remaining <= min_allowed_time {                                    
+                        if remaining <= min_queue_length {                                    
                             if idx == 0 {                                        
                                 stop_loop = true;
                                 break;
                             }
                         } else if let Some(freepos) = thread_manager.pop_from_free_queue() {                                                                                                                                 
-                                task = thread_manager.get_mut_thread(pos).primary_q.steal_half(); 
+                                task = thread_manager.get_mut_thread(pos).steal_half(); 
                                 if let Some(new_task) = task {                                                                      
                                     if new_task.is_empty() {                                            
                                         thread_manager.add_to_free_queue(freepos);

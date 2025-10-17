@@ -74,7 +74,7 @@ where V:Send
     pub thread:Option<std::thread::ScopedJoinHandle<'scope,Vec<T>>>,
     pub name:String,    
     pos: usize,    
-    pub primary_q: PrimaryAccessor<V,Coordination>,
+    primary_q: PrimaryAccessor<V,Coordination>,
     queue_stats:  Option<QueueStats>
 }
 
@@ -168,7 +168,24 @@ V:Send + Sync + 'scope
 
     pub fn queue_len(&self) -> usize {
         self.primary_q.len()
-    }   
+    } 
+
+    pub fn steal(&mut self) -> Option<Vec<V>> {
+        self.primary_q.steal()
+    }  
+
+    pub fn steal_half(&mut self) -> Option<Vec<V>> {
+        self.primary_q.steal_half()
+    }
+
+    pub fn is_queue_empty(&self) -> bool {
+        self.primary_q.is_empty()
+    } 
+
+    pub fn queue_start_len(&self) -> usize {
+        self.queue_stats.as_ref().map(|q|q.initial_queue_len())
+        .unwrap_or_default()
+    }
 
     pub fn get_elapsed_time(&mut self) -> Option<u128> {
         self.queue_stats.as_ref().map(QueueStats::elapsed_time)
@@ -179,6 +196,14 @@ V:Send + Sync + 'scope
         q.time_per_task(self.primary_q.len()))        
     }
 
+    pub fn predicted_queue_time(&self) -> f64 {
+        if let Some(processtime) = self.time_per_process() {
+            processtime * self.queue_len() as f64
+        } else {
+            0.0
+        }
+    }
+
     pub fn ratio_of_tasks_remaining(&self) -> Option<f64> {
         self.queue_stats.as_ref().map(|q|
         q.ratio_of_tasks_remaining(self.primary_q.len()))
@@ -187,15 +212,16 @@ V:Send + Sync + 'scope
 
     // The user is asked to share a min_ratio_completed as the projection may not be reliable for lower
     // ratios of completion. If that ratio is not completed, then the system returns None
-    pub fn projected_time_for_completion(&self, min_ratio_completed:f64) -> Option<f64> {
-        if let Some(ratio_pending) = self.ratio_of_tasks_remaining() {
-            if ratio_pending < (1.0 - min_ratio_completed) {
-                return Some(self.time_per_process().unwrap() * ratio_pending * self.queue_len() as f64);
-            } else {
-                return None;
+    pub fn projected_time_for_completion(&self, min_ratio_completed:f64) -> Option<f64> {        
+        if let Some(queue_stats) = self.queue_stats.as_ref() {
+            let len = self.queue_len();
+            let ratio_rem = queue_stats.ratio_of_tasks_remaining(len);
+            if ratio_rem < (1.0 - min_ratio_completed) {
+                return Some(queue_stats.time_per_task(len) * len as f64)
             }
+
         }
-        None
+        None               
     }
 
 }

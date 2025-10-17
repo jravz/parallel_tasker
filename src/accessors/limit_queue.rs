@@ -47,6 +47,18 @@ where State: Default + Clone
         })       
     }
 
+    ///Steals all the un-popped values from the queue. It can then be reused
+    /// elsewhere.
+    /// ```
+    /// use parallel_task::{
+    /// accessors::limit_queue::LimitAccessQueue,
+    /// push_workers::worker_thread::Coordination};
+    /// let values = (0..100_000).collect::<Vec<_>>();
+    /// let (mut primary, _) = LimitAccessQueue::<i32,Coordination>::new();
+    /// _ = primary.write(values);
+    /// let vec = primary.steal().unwrap(); //This step should not fail here. But unwrap not advised in production
+    /// assert_eq!(vec.len(), 100_000);
+    /// ```
     pub fn steal(&mut self) -> Option<Vec<T>> {         
         self.with_write_block(|s| {
             if s.val.is_empty() {
@@ -60,6 +72,18 @@ where State: Default + Clone
         })              
     }
 
+    ///Steals half the un-popped values from the queue. It can then be reused
+    /// elsewhere.
+    /// ```
+    /// use parallel_task::{
+    /// accessors::limit_queue::LimitAccessQueue,
+    /// push_workers::worker_thread::Coordination};
+    /// let values = (0..100_000).collect::<Vec<_>>();
+    /// let (mut primary, _) = LimitAccessQueue::<i32,Coordination>::new();
+    /// _ = primary.write(values);
+    /// let vec = primary.steal_half().unwrap(); //This step should not fail here. But unwrap not advised in production
+    /// assert_eq!(vec.len(), 50_000);
+    /// ```
     pub fn steal_half(&mut self) -> Option<Vec<T>> {          
         self.with_write_block(|s| {         
             if s.val.is_empty() {                

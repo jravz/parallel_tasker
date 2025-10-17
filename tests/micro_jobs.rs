@@ -1,4 +1,4 @@
-use std::{thread, time::{Duration, Instant}};
+use std::{time::{Duration, Instant}};
 use rayon::prelude::*;
 use parallel_task::prelude::*;
 use rand::Rng;
@@ -22,7 +22,7 @@ fn create_micro_jobs(count: usize) -> Vec<Job> {
     let mut rng = rand::rng();
 
     (0..count)
-        .map(|id| {
+        .map(|_id| {
             // 90% jobs: ultra fast (50–500 µs)
             // 9% jobs: moderate (500–3000 µs)
             // 1% jobs: heavier (3–10 ms)
@@ -50,7 +50,7 @@ fn micro_jobs() {
     let vec_jobs1 = vec_jobs.clone();
     let vec_jobs2 = vec_jobs.clone();
     let tm = std::time::Instant::now();
-    vec_jobs.into_iter().map(|job|{job.run();})
+    _ = vec_jobs.into_iter().map(|job|{job.run();})
     .collect::<Vec<_>>();
     println!("Normal : {}",tm.elapsed().as_micros());
  
@@ -69,7 +69,7 @@ fn micro_jobs() {
     let vec_jobs1 = vec_jobs.clone();
     let vec_jobs2 = vec_jobs.clone();
     let tm = std::time::Instant::now();
-    vec_jobs.into_iter().map(|job|{job.run();})
+    _ = vec_jobs.into_iter().map(|job|{job.run();})
     .collect::<Vec<_>>();
     println!("Normal : {}",tm.elapsed().as_micros());
 

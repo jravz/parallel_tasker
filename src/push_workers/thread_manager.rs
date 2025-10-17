@@ -58,6 +58,10 @@ F: Fn(Input) -> Output + Send + Sync + 'scope,
         &mut self.threads[pos]
     }
 
+    pub fn threads_as_mutable(&mut self) -> &mut Vec<WorkerThread<'scope,Input,Output>> {
+        &mut self.threads
+    } 
+
     pub fn add_thread(&mut self) -> Result<(),WorkThreadError>
     where Input: 'scope,
     Output: 'scope,
@@ -99,26 +103,35 @@ F: Fn(Input) -> Output + Send + Sync + 'scope,
     pub fn refresh_free_threads(&mut self, mut control_time:u128) -> Result<u128,WorkThreadError>
     {        
         self.clear_free_threads();
-        let mut is_process_time_high = false;        
+        let mut count_high_process_time:usize = 0;  
+        let more_threads_available = self.thread_len() < self.max_threads;     
         for idx in 0..self.thread_len() {
             let thread = self.get_mut_thread(idx);
             let pos = thread.pos();
-            if !thread.is_running() && thread.primary_q.is_empty() {
+            if !thread.is_running() && thread.is_queue_empty() {
                 self.add_to_free_queue(pos);
-            } else if let Some (processrate) = thread.time_per_process() {
-                let expected_process_time_thread = processrate * thread.queue_len() as f64;
-                if expected_process_time_thread > control_time as f64 {
-                    is_process_time_high = true;
-                }                     
-            }
-            
+            } 
+            // Attempt to predict the time required for completion and use that to test
+            // if that exceeds the time to spin out a thread
+            else if more_threads_available
+            {
+                if let Some (processtime) = thread.time_per_process() {   
+                    let predicted_queue_time = processtime * thread.queue_len() as f64;                    
+                    if predicted_queue_time > control_time as f64 {
+                        count_high_process_time += 1;
+                    }    
+                }                 
+            }    
         }        
 
-        if !self.has_free_threads() && is_process_time_high && self.thread_len() < self.max_threads {
-            let tm = std::time::Instant::now();
-            self.add_thread()?;                                                    
-            control_time = tm.elapsed().as_nanos();             
-            self.add_to_free_queue(self.thread_len() - 1);            
+        if more_threads_available && !self.has_free_threads() && count_high_process_time > 0 {
+            let new_thread_count = usize::min(self.max_threads - self.thread_len(),count_high_process_time);
+            let tm = std::time::Instant::now();  
+            for _ in 0..new_thread_count {
+                self.add_thread()?;                                                                                
+                self.add_to_free_queue(self.thread_len() - 1);  
+            }  
+            control_time = tm.elapsed().as_nanos() / new_thread_count as u128;                               
         } 
         Ok(control_time)
     }

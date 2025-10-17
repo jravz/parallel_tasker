@@ -2,6 +2,7 @@ use std::hint::spin_loop;
 use statrs::distribution::{ContinuousCDF, Normal};
 
 const DEFAULT_THREADS_NUM:usize = 1;
+#[allow(dead_code)]
 const CPU_2_THREAD_RATIO:usize = 2;
 
 pub fn max_threads() -> usize {        
@@ -9,7 +10,7 @@ pub fn max_threads() -> usize {
         available_cpus.get()
     } else {
         DEFAULT_THREADS_NUM
-    } * (CPU_2_THREAD_RATIO);
+    };
 
     num_threads
 }
@@ -64,12 +65,10 @@ impl SpinWait {
         static MAX_SPINS: usize = 128;                  
         if *spins < MAX_SPINS {
             spin_loop(); // tight cpu-friendly pause
-            *spins += 1;                               
-            return;
+            *spins += 1;                                           
         } else {      
             std::thread::yield_now();                               
-            *spins /= 2; // regress back
-            return;
+            *spins /= 2; // regress back            
         }        
     }
 

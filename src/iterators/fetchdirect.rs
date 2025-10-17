@@ -84,7 +84,6 @@ impl<'data, T> DiscreteQueue for FetchInDirect<'data, T> {
         if size == 0 {
             None
         } else {
-
             let start = self.start;
             let end = start+ size;
             self.start += size;

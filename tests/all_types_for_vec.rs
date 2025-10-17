@@ -17,7 +17,7 @@ fn all_types_test_for_vec() {
     assert_eq!(v.len(),100_000);
 
     // Vec
-    let v = (0..100_000).map(|x|vec![1,2,3,4]).collect::<Vec<_>>()
+    let v = (0..100_000).map(|_|vec![1,2,3,4]).collect::<Vec<_>>()
     .into_parallel_iter().map(|mut x|x.push(100)).collect::<Vec<_>>();
     assert_eq!(v.len(),100_000);
 

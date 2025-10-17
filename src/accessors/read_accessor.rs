@@ -46,8 +46,8 @@ macro_rules! readaccessorref {
 readaccessorref!(PrimaryAccessor, SecondaryAccessor);
 
 
-/// QueuePtr is being used to account for the heap memory allocation for the Queue and ensure the same is dropped at the end 
-/// when the drop is called.
+/// QueuePtr is being used to account for the heap memory allocation for the Queue (which is captured within an Atomic Pointer) a
+/// and to ensure the same is dropped at the end, when the drop is called.
 /// QueuePtr is purposefully kept private and inaccessible. Using Deref and DerefMut the access to the same is disguised
 /// within the ReaderAccessors.
 struct QueuePtr<T,State> {
@@ -113,6 +113,7 @@ where State: Clone + Default
         }
     }
 
+    //Checks if pointer is null before sharing the same within an Option
     fn as_ptr(&self) -> Option<*mut LimitAccessQueue<T,State>> {        
         let ptr = self.val.load(std::sync::atomic::Ordering::Acquire);
         if ptr.is_null() {
@@ -137,12 +138,10 @@ where State: Clone + Default
     fn get_mut(&self) -> Option<&mut LimitAccessQueue<T,State>> {
         unsafe {  
             if let Some(ptr_ref) = self.as_ptr() {
-                let opt_ptr = (ptr_ref).as_mut();
-                opt_ptr               
+                (ptr_ref).as_mut()                    
             }  else {
                 None
-            }        
-            
+            }                    
         }       
     }
 
@@ -174,20 +173,17 @@ where State: Clone + Default
 
 
     pub fn write(&self, values:Vec<T>) -> Result<bool,bool> {
-        if let Some(_) = self.within_mutable_block(|l| Some(l.write(values))) {
-            Ok(true)
-        } else {
-            Err(false)
-        }        
+        self.within_mutable_block(|l| {
+            l.write(values);
+            Some(Ok(true))
+        }).unwrap_or(Err(false))               
     }
-    
-    #[allow(clippy::redundant_pattern_matching)]
-    pub fn replace(&self, values:Vec<T>) -> Result<bool,bool> {        
-        if let Some(_) = self.within_mutable_block(|l| Some(l.replace(values))) {
-            Ok(true)
-        } else {
-            Err(false)
-        }        
+        
+    pub fn replace(&self, values:Vec<T>) -> Result<bool,bool> { 
+        self.within_mutable_block(|l| {
+            l.replace(values);
+            Some(Ok(true))
+        }).unwrap_or(Err(false))                   
     }
 
     pub fn is_write_blocked(&self) -> bool {
@@ -222,9 +218,10 @@ where State: Clone + Default
     }
 
     pub fn set_state(&mut self, state:State) {
-        self.within_mutable_block(|l| 
-            Some(l.set_state(state))
-        );
+        self.within_mutable_block(|l| {
+            l.set_state(state);
+            Some(())
+        });
     }
 
     pub fn state(&mut self) -> State {

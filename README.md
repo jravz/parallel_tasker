@@ -5,12 +5,20 @@ A fast data parallelism library using Atomics to share data across threads and u
 parallel_tasker is a high-performance parallel iteration library for Rust that is optional to Rayon. I am a great admirer of Rayon crate and have used it extensively. Instead of making a 'me too', I wanted to experiment with a different algorithm:
 ![Flow diagram](images/paralleltaskflow.png)
 
+The overall algorithm follows a push based approach with work stealing to deliver fast results.
+The key components are:
 WorkerController - the master controller that absorbs the iter and the function closure. It operates within a scope and spawns threads as per the load.
+
+ThreadManager - manages all the work threads and checks for free threads and spawns new ones if existing are all busy.
 
 WorkerThread - the thread manager that contains a thread running a task loop. It signals when job is done and the worker controller pushes a new set of jobs
 
-Work stealing - Once the main queue is exhausted, a work stealing approach has been employed to quickly redistribute work and close tasks.
-Work is prioritised based on which thread is making least progress and its jobs are picked and given to a free thread.
+ThreadRunner - The actual task runner within the thread
+
+It follows the approach 
+Once the main queue is exhausted, a work stealing approach has been employed to quickly redistribute work and close tasks.
+Redistribution of tasks is based on which thread is making least progress or has the largest queue and its jobs are picked and given to a free thread. It spawns new threads based on the load to expedite the calculations.
+
 An inhouse concept of LimitedAccessQueue has been employed. This can be accessed only via two ReadAccessors provided at the time of creation - primary and secondary. Only Primary has the ability to steal tasks from the Queue while both may add tasks. WorkerController employs this to redistribute tasks post the main queue being complete. Synchronisation is supported using atomics. This is a very fast queue with limited to no latency. 
 
 This design provides low overhead, minimal contention, and predictable cache-friendly access patterns. Benchmarks show that it performs within ~5-10% of Rayon for large workloads, such as Monte Carlo simulations with 100,000 iterations, while maintaining a simple scheduling logic.

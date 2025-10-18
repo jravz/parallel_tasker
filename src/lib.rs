@@ -1,14 +1,7 @@
-//! A super fast data parallelism library using Atomics to share data across threads and uniquely pull values 
-//! from Collections such as Vec or HashMap. It follows a 'pull' approach and tries to reduce the time required 
-//! for the thread to pick the next value. The key question was can the tine taken by thread to get the next job 
-//! be kept minimal. This is achieved by using an AtomicIterator that generates a mutually exclusive usize value for each 
-//! thread that corresponds to a unique stored value in the Collection. 
-//! Hence, all types that implement the Fetch Trait (Vec and HashMap) can be consumed or passed by reference to run 
-//! Map or ForEach functions on the same.
-
-//! The results show comparable performance to the popular Rayon library and in a number of cases improved performance as well. 
-//! No study has been done to establish whether the results are significant.
-//! 
+//! A fast data parallelism library using Atomics to share data across threads and uniquely pull values 
+//! from Collections such as Vec, Range or HashMap. It follows a 'push' approach and has a scheduling algorithm based
+//! on work redistribution to expedite results. 
+//! The results show comparable performance to the popular Rayon library within 5 - 10%. 
 //! 
 //! 
 //! Add this crate using:

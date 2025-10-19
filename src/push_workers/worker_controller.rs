@@ -132,15 +132,14 @@ I:AtomicIterator<AtomicItem = V> + Send + Sized
                     }                    
                 }
 
-                while thread_manager.has_free_threads() && !stop_loop {  
-
+                while thread_manager.has_free_threads() && !stop_loop {                      
                     let mut vec_ranking = thread_manager.threads_as_mutable()
                     .iter_mut().map(|thread|
                     {
                         (thread.pos(),thread.queue_len())
                     }).collect::<Vec<(usize, usize)>>();
-                    vec_ranking.sort_by(|a,b|b.1.cmp(&a.1));
-                                                          
+                    vec_ranking.sort_by(|a,b|b.1.cmp(&a.1));                    
+
                     let mut task:Option<Vec<V>>;                    
                     let min_queue_length = MIN_QUEUE_LENGTH; // At 2 jobs, there is nothing much to distribute 
                     for (idx,(pos,remaining))  in vec_ranking.into_iter().enumerate() {                        
@@ -149,13 +148,31 @@ I:AtomicIterator<AtomicItem = V> + Send + Sized
                                 stop_loop = true;
                                 break;
                             }
-                        } else if let Some(freepos) = thread_manager.pop_from_free_queue() {                                                                                                                                 
-                                task = thread_manager.get_mut_thread(pos).steal_half(); 
-                                if let Some(new_task) = task {                                                                      
+                        } else if let Some(freepos) = thread_manager.pop_from_free_queue() {                                
+                                task = thread_manager.get_mut_thread(pos).steal_half();                                 
+                                if let Some(new_task) = task {                                        
                                     if new_task.is_empty() {                                            
                                         thread_manager.add_to_free_queue(freepos);
                                     } else {                                            
                                         let free_thread = thread_manager.get_mut_thread(freepos);
+
+                                        println!("thread stats");
+                                        let tm = std::time::Instant::now();
+                                        let len = free_thread.queue_len();
+                                        println!("qlen = {}: {}",tm.elapsed().as_nanos(),len);
+                                        let tm = std::time::Instant::now();
+                                        let time_el = free_thread.time_per_process();
+                                        println!("time per process= {}:",tm.elapsed().as_nanos());
+                                        let tm = std::time::Instant::now();
+                                        let x = free_thread.get_elapsed_time();
+                                        println!("get elapsed time= {}:",tm.elapsed().as_nanos());
+                                        let tm = std::time::Instant::now();
+                                        let x = free_thread.projected_time_for_completion(0.2);
+                                        println!("projected time time = {}:",tm.elapsed().as_nanos());
+                                        let tm = std::time::Instant::now();
+                                        let x = free_thread.projected_time_for_completion(0.1);
+                                        println!("At 0.1 time time = {}:",tm.elapsed().as_nanos());
+
                                         if self.send_leaked_task(free_thread, new_task).is_err() {
                                             stop_loop = true;                         
                                             break;

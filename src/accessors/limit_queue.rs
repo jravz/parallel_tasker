@@ -90,8 +90,7 @@ where State: Default + Clone
                 None
             } 
             else {
-                let halflen = s.val.len() / 2;   
-                let res = s.val.drain(0..halflen).collect::<Vec<T>>();          
+                let res = s.val.split_off(s.val.len()/2);          
                 Some(res)            
             }            
         })                      

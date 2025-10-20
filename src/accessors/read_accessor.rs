@@ -163,6 +163,10 @@ where State: Clone + Default
         self.within_mutable_block(|l| l.pop())                                                                     
     }
 
+    pub fn pop_count(&self, count:usize) -> Option<Vec<T>> {  
+        self.within_mutable_block(|l| l.pop_count(count))                                                                    
+    }
+
     pub fn is_empty(&self) -> bool {
         self.within_mutable_block(|l| Some(l.is_empty())).unwrap_or(true)
     }

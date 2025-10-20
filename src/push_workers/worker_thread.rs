@@ -29,14 +29,18 @@ pub enum Coordination
 /// to take specific decisions
 pub struct QueueStats {
     process_time: std::time::Instant,
-    start_queue_len: usize
+    start_queue_len: usize,
+    last_poll_len: usize,      
+    times_polled: usize  
 }
 
 impl QueueStats {
     pub fn new(start_queue_len:usize, process_time: std::time::Instant) -> Self {
         Self {
             process_time,
-            start_queue_len
+            start_queue_len,
+            last_poll_len:0usize,            
+            times_polled: 0usize
         }
     }
 
@@ -61,6 +65,20 @@ impl QueueStats {
             return 0.0;
         }
         curr_len as f64 / self.initial_queue_len() as f64
+    }
+
+    pub fn poll_progress(&mut self, curr_len:usize) -> Option<(usize, usize, f64)> {        
+        
+        self.times_polled += 1;
+        let last_len = self.last_poll_len;
+        self.last_poll_len = curr_len;
+        //no point trying to see progress on a newly started process        
+        if self.times_polled == 1 || curr_len > last_len{
+            return None;
+        }
+        let shift = last_len - curr_len;
+        let rate_change:f64 = (self.start_queue_len - curr_len) as f64 / self.times_polled as f64;        
+        Some((curr_len, shift, rate_change))
     }
 }
 
@@ -124,6 +142,10 @@ V:Send + Sync + 'scope
         self.primary_q.state() == Coordination::Run
     }
 
+    pub fn is_waiting(&mut self) -> bool {
+        self.primary_q.state() == Coordination::Waiting
+    }
+
     /// Run function runs a new batch of tasks on the thread
     pub fn run(&mut self, values:Vec<V>) -> Result<(), WorkThreadError> {
         if values.is_empty() {
@@ -170,12 +192,17 @@ V:Send + Sync + 'scope
         self.primary_q.len()
     } 
 
-    pub fn steal(&mut self) -> Option<Vec<V>> {
-        self.primary_q.steal()
+    pub fn steal(&mut self) -> Option<Vec<V>> {        
+        let res = self.primary_q.steal();
+        println!("[[{}:{:?}]]",self.primary_q.len(),res.as_ref().map(|q|q.len()));
+        self.queue_stats = Some(QueueStats::new(self.primary_q.len(), std::time::Instant::now()));
+        res
     }  
 
-    pub fn steal_half(&mut self) -> Option<Vec<V>> {
-        self.primary_q.steal_half()
+    pub fn steal_half(&mut self) -> Option<Vec<V>> {        
+        let res = self.primary_q.steal_half();         
+        self.queue_stats = Some(QueueStats::new(self.primary_q.len(), std::time::Instant::now()));
+        res
     }
 
     pub fn is_queue_empty(&self) -> bool {
@@ -222,6 +249,16 @@ V:Send + Sync + 'scope
 
         }
         None               
+    }
+
+    pub fn poll_progress(&mut self) -> Option<(usize, usize, f64)> {                
+        let currlen = self.queue_len();        
+        if let Some(res) = self.queue_stats.as_mut().map(|q|
+        q.poll_progress(currlen)) {
+            res
+        } else {
+            None
+        }
     }
 
 }

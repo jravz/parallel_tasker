@@ -7,44 +7,53 @@ use std::thread::Scope;
 use crate::collector::Collector;
 use crate::errors::WorkThreadError;
 use crate::prelude::AtomicIterator;
+use crate::push_workers::priorisation::PrioritizeThread;
 use crate::push_workers::thread_manager::ThreadManager;
 
 use super::worker_thread::WorkerThread;
 
-pub const INITIAL_WORKERS:usize = 2;
+pub const INITIAL_WORKERS:usize = 1;
 const MIN_QUEUE_LENGTH:usize = 2;
 
-pub struct WorkerController<F,V,T,I> 
+pub struct WorkerController<F,V,T,I,P> 
 where F: Fn(V) -> T + Send + Sync,
 V: Send + Sync,
 T: Send + Sync,    
-I:AtomicIterator<AtomicItem = V> + Send + Sized 
+I:AtomicIterator<AtomicItem = V> + Send + Sized,
+P: PrioritizeThread
 {
     f:Arc<RwLock<F>>,
     values: I,  
     avg_task_len: Option<usize>,    
     max_threads: usize,
+    priority_strategy: P
 }
 
-impl<F,V,T,I>  WorkerController<F,V,T,I>
+impl<F,V,T,I,P>  WorkerController<F,V,T,I,P>
 where F: Fn(V) -> T + Send + Sync,
 V: Send + Sync,
 T: Send + Sync,    
-I:AtomicIterator<AtomicItem = V> + Send + Sized  
+I:AtomicIterator<AtomicItem = V> + Send + Sized,
+P: PrioritizeThread
 {
 
-    pub fn new(f:F, values:I) -> Self 
+    pub fn new(f:F, values:I, strategy: P) -> Self 
     {                      
         Self {
             f: Arc::new(RwLock::new(f)),
             values,            
             avg_task_len:None,
-            max_threads: crate::utils::max_threads()
+            max_threads: crate::utils::max_threads(),
+            priority_strategy: strategy
         }
     }
 
     pub fn set_max_threads(&mut self, limit:usize) {
         self.max_threads = usize::min(limit, crate::utils::max_threads());
+    }
+
+    pub fn set_priority_strategy(&mut self, strategy:P) {
+        self.priority_strategy = strategy;
     }
 
     fn avg_task_length(&self) -> Option<usize> {
@@ -68,15 +77,11 @@ I:AtomicIterator<AtomicItem = V> + Send + Sized
     where C: Collector<T>,    
     {                                             
         std::thread::scope(            
-            |s: &Scope<'_, '_>| {   
-              
-                let mut thread_manager = ThreadManager::new(s,self.f.clone(), self.max_threads);                                                                                                                                                                                                                                                                                                                                                                                                                                     
-               
-                let control_time = self.primary_queue_distribution(&mut thread_manager)?;        
-                      
-                self.redistribute_among_threads( &mut thread_manager,control_time);                 
-                                                            
-                thread_manager.join_all_threads()                                                                  
+            |s: &Scope<'_, '_>| {                 
+                let mut thread_manager = ThreadManager::new(s,self.f.clone(), self.max_threads);                                                                                                                                                                                                                                                                                                                                                                                                                                                     
+                let control_time = self.primary_queue_distribution(&mut thread_manager)?;                                        
+                self.redistribute_among_threads( &mut thread_manager,control_time);                                                                      
+                thread_manager.join_all_threads()                
             }            
         )        
     }
@@ -109,8 +114,6 @@ I:AtomicIterator<AtomicItem = V> + Send + Sized
         Ok(control_time)
     }
 
-    
-
     /// Redistribution works on the principle that if there is a free thread and there is another thread that has a large
     /// queue of tasks, then the former should get half to save on time.
     /// It does this till the thread with the biggest queue has upto or less than 10% of the tasks from the intial 
@@ -125,54 +128,29 @@ I:AtomicIterator<AtomicItem = V> + Send + Sized
         && self.avg_task_length().is_some() //ensure at least one set of values was sent to queue
         {                                                                               
             let mut stop_loop = false;
-            loop {                 
-                if !thread_manager.has_free_threads() {                                                                                                      
-                    if let Ok(tm) = thread_manager.refresh_free_threads(control_time) {
-                        control_time = tm;
-                    }                    
-                }
+            loop {                     
+                if let Ok(tm) = thread_manager.refresh_free_threads(control_time) {
+                    control_time = tm;
+                }                
 
-                while thread_manager.has_free_threads() && !stop_loop {                      
-                    let mut vec_ranking = thread_manager.threads_as_mutable()
-                    .iter_mut().map(|thread|
-                    {
-                        (thread.pos(),thread.queue_len())
-                    }).collect::<Vec<(usize, usize)>>();
-                    vec_ranking.sort_by(|a,b|b.1.cmp(&a.1));                    
-
+                if thread_manager.has_free_threads() && !stop_loop {                                      
+                    let vec_ranking = self.priority_strategy.prioritize(thread_manager);                                    
                     let mut task:Option<Vec<V>>;                    
                     let min_queue_length = MIN_QUEUE_LENGTH; // At 2 jobs, there is nothing much to distribute 
-                    for (idx,(pos,remaining))  in vec_ranking.into_iter().enumerate() {                        
-                        if remaining <= min_queue_length {                                    
-                            if idx == 0 {                                        
+                    for (idx,(pos,remaining,_,_))  in vec_ranking.into_iter().enumerate() {                        
+                        if remaining <= min_queue_length {
+                            if idx == 0 {
                                 stop_loop = true;
                                 break;
-                            }
+                            }                                                                                                                                                        
                         } else if let Some(freepos) = thread_manager.pop_from_free_queue() {                                
-                                task = thread_manager.get_mut_thread(pos).steal_half();                                 
-                                if let Some(new_task) = task {                                        
+                                let thread  = thread_manager.get_mut_thread(pos);                                                                                          
+                                task = thread.steal_half();           
+                                if let Some(new_task) = task {                                       
                                     if new_task.is_empty() {                                            
                                         thread_manager.add_to_free_queue(freepos);
                                     } else {                                            
-                                        let free_thread = thread_manager.get_mut_thread(freepos);
-
-                                        println!("thread stats");
-                                        let tm = std::time::Instant::now();
-                                        let len = free_thread.queue_len();
-                                        println!("qlen = {}: {}",tm.elapsed().as_nanos(),len);
-                                        let tm = std::time::Instant::now();
-                                        let time_el = free_thread.time_per_process();
-                                        println!("time per process= {}:",tm.elapsed().as_nanos());
-                                        let tm = std::time::Instant::now();
-                                        let x = free_thread.get_elapsed_time();
-                                        println!("get elapsed time= {}:",tm.elapsed().as_nanos());
-                                        let tm = std::time::Instant::now();
-                                        let x = free_thread.projected_time_for_completion(0.2);
-                                        println!("projected time time = {}:",tm.elapsed().as_nanos());
-                                        let tm = std::time::Instant::now();
-                                        let x = free_thread.projected_time_for_completion(0.1);
-                                        println!("At 0.1 time time = {}:",tm.elapsed().as_nanos());
-
+                                        let free_thread = thread_manager.get_mut_thread(freepos);                                        
                                         if self.send_leaked_task(free_thread, new_task).is_err() {
                                             stop_loop = true;                         
                                             break;

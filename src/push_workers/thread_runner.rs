@@ -35,26 +35,25 @@ F:Fn(V) -> T {
     fn process(&mut self, final_values:&mut Vec<T>, processed:&mut usize) 
     {
         let fread: std::sync::RwLockReadGuard<'_, F> = self.f.read().unwrap();
-        SpinWait::loop_while_mut(||self.secondary_q.is_empty());
-        *processed += self.secondary_q.len();
-        while let Some(value) = self.secondary_q.pop() {                                        
-            final_values.push(fread(value));
+        SpinWait::loop_while_mut(||self.secondary_q.is_empty());        
+        while let Some(value) = self.secondary_q.pop() {            
+            final_values.push(fread(value));                                              
         }
         self.secondary_q.set_state(Coordination::Waiting);                                                                                                                                                                                                          
     }
 
     pub fn run(&mut self) -> Vec<T> {
         let mut final_values:Vec<T> = Vec::new();                     
-        let mut processed = 0;      
-        // _= self.sender.send(ThreadMesg::Free(self.pos, std::time::Instant::now()));  
+        let mut processed = 0;         
+
         loop 
         {                                    
             match self.secondary_q.state() {                
                 Coordination::Park => {
                     std::thread::park();
                 },
-                Coordination::Run => {                                                 
-                    self.process(&mut final_values, &mut processed);                     
+                Coordination::Run => {                                                             
+                    self.process(&mut final_values, &mut processed);                        
                 },
                 Coordination::Done => {                      
                     break;
@@ -65,13 +64,13 @@ F:Fn(V) -> T {
                 Coordination::Panic => {
                     panic!("There was some error.");
                 }, 
-                Coordination::Waiting => {                      
-                    SpinWait::loop_while_mut(||self.secondary_q.state() == Coordination::Waiting);                    
+                Coordination::Waiting => {                                          
+                    SpinWait::loop_while_mut(||self.secondary_q.state() == Coordination::Waiting);                     
                 }                                             
                 _ => {}
             }            
         }
-        
+
         final_values       
     }
 

@@ -2,7 +2,7 @@
 //! spawns WorkerThreads. These worker threads can be communicated with via sync and async channels to 
 //! send data for processing and to close the same
 
-use crate::{collector::Collector, errors::WorkThreadError, for_each::ParallelForEach, iterators::iterator::AtomicIterator, map::ParallelMap, push_workers::worker_controller::WorkerController};
+use crate::{collector::Collector, errors::WorkThreadError, for_each::ParallelForEach, iterators::iterator::AtomicIterator, map::ParallelMap, push_workers::{priorisation::ThreadPrioritization, worker_controller::WorkerController}};
 pub struct WorkerThreads {pub nthreads:usize }
 
 #[allow(dead_code)]
@@ -16,7 +16,7 @@ impl WorkerThreads
     C: Collector<T> {          
         let fnc = task.f;       
         let q = task.iter.iter;        
-        match WorkerController::new(fnc,q)
+        match WorkerController::new(fnc,q, ThreadPrioritization::Remaining)
         .run::<C>() {
             Ok(res) => { res }
             Err(e) => {
@@ -37,7 +37,7 @@ impl WorkerThreads
         let fnc = task.f;       
         let q = task.iter.iter;            
 
-        if let Err(e) = WorkerController::new(fnc,q)
+        if let Err(e) = WorkerController::new(fnc,q,ThreadPrioritization::Remaining)
          .run::<Vec<_>>() {            
             if let WorkThreadError::ThreadAdd(e) = e {
                 panic!("Error: {}",e);

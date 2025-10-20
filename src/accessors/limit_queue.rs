@@ -47,6 +47,23 @@ where State: Default + Clone
         })       
     }
 
+    pub fn pop_count(&mut self,count:usize) -> Option<Vec<T>> {
+        self.with_write_block(|s| { 
+            let mut res = Vec::new();
+            for idx in 0..count {
+                if let Some(val) = s.val.pop() {
+                    res.push(val)
+                } else {
+                    if idx == 0 {
+                        return None;
+                    }
+                    break;
+                }
+            }   
+            Some(res)         
+        })       
+    }
+
     ///Steals all the un-popped values from the queue. It can then be reused
     /// elsewhere.
     /// ```

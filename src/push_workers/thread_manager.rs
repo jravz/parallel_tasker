@@ -4,6 +4,7 @@ use std::{collections::VecDeque, sync::{Arc, RwLock}};
 
 use crate::{collector::Collector, errors::WorkThreadError, push_workers::worker_thread::WorkerThread};
 
+
 pub struct ThreadManager<'env, 'scope,Input,Output,F>
 where Input: Send + Sync + 'scope,
 Output: Send + Sync + 'scope,  
@@ -108,7 +109,7 @@ F: Fn(Input) -> Output + Send + Sync + 'scope,
         for idx in 0..self.thread_len() {
             let thread = self.get_mut_thread(idx);
             let pos = thread.pos();
-            if !thread.is_running() && thread.is_queue_empty() {
+            if thread.is_waiting() {
                 self.add_to_free_queue(pos);
             } 
             // Attempt to predict the time required for completion and use that to test

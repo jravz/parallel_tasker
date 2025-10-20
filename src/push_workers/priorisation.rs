@@ -13,10 +13,9 @@ use super::thread_manager::ThreadManager;
 /// Values in sequence are:
 /// a. threadpos - usize (used to pick the thread from the thread_manager)
 /// b. remaining values in the queue - usize (available from WorkerThread)
-/// c. change since the last poll - usize (available)
 pub trait PrioritizeThread {
     fn prioritize<'env, 'scope,Input,Output,F>(&self, thread_manager:&mut ThreadManager<'env, 'scope,Input,Output,F>) 
-    -> Vec<(usize, usize, usize, f64)>
+    -> Vec<(usize, usize)>
     where Input: Send + Sync + 'scope,
     Output: Send + Sync + 'scope,  
     F: Fn(Input) -> Output + Send + Sync + 'scope,
@@ -34,7 +33,7 @@ pub enum ThreadPrioritization {
 impl PrioritizeThread for ThreadPrioritization {
 
     fn prioritize<'env, 'scope,Input,Output,F>(&self, thread_manager:&mut ThreadManager<'env, 'scope,Input,Output,F>) 
-    -> Vec<(usize, usize, usize, f64)>
+    -> Vec<(usize, usize)>
     where Input: Send + Sync + 'scope,
     Output: Send + Sync + 'scope,  
     F: Fn(Input) -> Output + Send + Sync + 'scope,
@@ -79,7 +78,8 @@ impl PrioritizeThread for ThreadPrioritization {
                 });
             }
         }        
-        vec_ranking
+        vec_ranking.into_iter().map(|val|(val.0,val.1))
+        .collect::<Vec<_>>()
     }
 
 }

@@ -23,6 +23,7 @@ An inhouse concept of LimitedAccessQueue has been employed. This can be accessed
 
 This design provides low overhead, minimal contention, and predictable cache-friendly access patterns. Benchmarks show that it performs within ~5-10% of Rayon for large workloads, such as Monte Carlo simulations with 100,000 iterations, while maintaining a simple scheduling logic.
 This has been tested via a cargo bench analysis, a sample of which has been shown below.
+Here, PT refers to Parallel_task flow. A benchmark was designed to run over a range of tasks with times that ranged from micro to early millis. The three scenarios considered were running it on: a: Normal (without concurrency), b: Rayon and c: Parallel_Task crate.
 ![Flow diagram](images/cargo_bench_results.png)
 
 parallel_tasker is a fully usable parallel iterator library for real-world workloads, offering a different perspective on parallelism while maintaining optimal performance as tested in cargo bench.

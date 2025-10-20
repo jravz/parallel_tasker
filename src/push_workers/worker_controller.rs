@@ -137,7 +137,7 @@ P: PrioritizeThread
                     let vec_ranking = self.priority_strategy.prioritize(thread_manager);                                    
                     let mut task:Option<Vec<V>>;                    
                     let min_queue_length = MIN_QUEUE_LENGTH; // At 2 jobs, there is nothing much to distribute 
-                    for (idx,(pos,remaining,_,_))  in vec_ranking.into_iter().enumerate() {                        
+                    for (idx,(pos,remaining))  in vec_ranking.into_iter().enumerate() {                        
                         if remaining <= min_queue_length {
                             if idx == 0 {
                                 stop_loop = true;

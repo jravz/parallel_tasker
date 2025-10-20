@@ -12,7 +12,7 @@ use crate::push_workers::thread_manager::ThreadManager;
 
 use super::worker_thread::WorkerThread;
 
-pub const INITIAL_WORKERS:usize = 1;
+pub const INITIAL_WORKERS:usize = 2;
 const MIN_QUEUE_LENGTH:usize = 2;
 
 pub struct WorkerController<F,V,T,I,P> 

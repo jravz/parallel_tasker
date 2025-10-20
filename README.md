@@ -15,9 +15,8 @@ WorkerThread - the thread manager that contains a thread running a task loop. It
 
 ThreadRunner - The actual task runner within the thread
 
-It follows the approach 
-Once the main queue is exhausted, a work stealing approach has been employed to quickly redistribute work and close tasks.
-Redistribution of tasks is based on which thread is making least progress or has the largest queue and its jobs are picked and given to a free thread. It spawns new threads based on the load to expedite the calculations.
+It follows the approach wherein once the main queue is exhausted, a work stealing approach has been employed to quickly redistribute work and close tasks.
+Redistribution of tasks is based on which thread is making least progress or has the largest queue and its jobs are picked and given to a free thread. It spawns new threads based on the load to expedite the calculations. The choices are made based on a cost analysis for instance, time to spawn a new thread vs. progress till date.
 
 An inhouse concept of LimitedAccessQueue has been employed. This can be accessed only via two ReadAccessors provided at the time of creation - primary and secondary. Only Primary has the ability to steal tasks from the Queue while both may add tasks. WorkerController employs this to redistribute tasks post the main queue being complete. Synchronisation is supported using atomics. This is a very fast queue with limited to no latency. 
 

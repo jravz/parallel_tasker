@@ -252,13 +252,8 @@ V:Send + Sync + 'scope
     }
 
     pub fn poll_progress(&mut self) -> Option<(usize, usize, f64)> {                
-        let currlen = self.queue_len();        
-        if let Some(res) = self.queue_stats.as_mut().map(|q|
-        q.poll_progress(currlen)) {
-            res
-        } else {
-            None
-        }
+        let currlen = self.queue_len();     
+        self.queue_stats.as_mut().map(|q| q.poll_progress(currlen))?        
     }
 
 }

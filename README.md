@@ -1,6 +1,7 @@
 # Parallel Task Crate
 A fast data parallelism library using Atomics to share data across threads and uniquely pull values from Collections such as Vec, HashMap, Range. It leverages a 'push' approach and employs an inhouse workstealing algorithm with atomics to manage . 
 All tasks are treated equally. Each worker has its own local queue, and a central controller continuously polls these queues to measure load. When a worker becomes idle, it pulls roughly half the tasks from the heaviest queue. This ensures efficient CPU utilization, preserves task isolation, and dynamically balances work without relying on a global task queue.
+Crate available: https://crates.io/crates/parallel_task
 
 ## What is the objective of this crate?
 parallel_tasker is a high-performance parallel iteration library for Rust that is designed as a competent alternative to Rayon. I am a great admirer of Rayon crate and have used it extensively. Instead of making a 'me too', I wanted to experiment with a different algorithm:

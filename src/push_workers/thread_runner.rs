@@ -32,7 +32,7 @@ F:Fn(V) -> T {
 
     }    
 
-    fn process(&mut self, final_values:&mut Vec<T>, processed:&mut usize) 
+    fn process(&mut self, final_values:&mut Vec<T>) 
     {
         let fread: std::sync::RwLockReadGuard<'_, F> = self.f.read().unwrap();
         SpinWait::loop_while_mut(||self.secondary_q.is_empty());        
@@ -43,8 +43,7 @@ F:Fn(V) -> T {
     }
 
     pub fn run(&mut self) -> Vec<T> {
-        let mut final_values:Vec<T> = Vec::new();                     
-        let mut processed = 0;         
+        let mut final_values:Vec<T> = Vec::new();                               
 
         loop 
         {                                    
@@ -53,7 +52,7 @@ F:Fn(V) -> T {
                     std::thread::park();
                 },
                 Coordination::Run => {                                                             
-                    self.process(&mut final_values, &mut processed);                        
+                    self.process(&mut final_values);                        
                 },
                 Coordination::Done => {                      
                     break;
